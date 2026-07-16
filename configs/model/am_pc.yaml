@@ -1,0 +1,9 @@
+_target_: rl4co.models.AttentionModel
+
+baseline: "no"
+
+policy_kwargs:
+  embed_dim: 128
+  num_encoder_layers: 3
+  num_heads: 8
+

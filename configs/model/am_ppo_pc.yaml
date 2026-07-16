@@ -1,0 +1,18 @@
+_target_: rl4co.models.AMPPO
+
+policy_kwargs:
+  embed_dim: 128
+  num_encoder_layers: 3
+  num_heads: 8
+
+critic_kwargs:
+  embed_dim: ${model.policy_kwargs.embed_dim}
+
+mini_batch_size: 64
+ppo_epochs: 2
+
+metrics:
+  train: ["loss", "reward", "surrogate_loss", "value_loss", "entropy"]
+  val: ["reward"]
+  test: ${model.metrics.val}
+  log_on_step: True

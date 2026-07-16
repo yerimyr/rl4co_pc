@@ -1,0 +1,36 @@
+# @package _global_
+
+defaults:
+  - override /model: am_ppo_pc.yaml
+  - override /env: pc.yaml
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /logger: tensorboard.yaml
+
+model:
+  generate_default_data: false
+  batch_size: 128
+  val_batch_size: 256
+  test_batch_size: 256
+  train_data_size: 256  #10_000
+  val_data_size: 256  #1_000
+  test_data_size: 256  #1_000
+  optimizer_kwargs:
+    lr: 1e-4
+    weight_decay: 1e-6
+
+trainer:
+  max_epochs: 50
+  enable_progress_bar: false
+  enable_model_summary: false
+
+callbacks:
+  rich_progress_bar: null
+  model_summary: null
+  tensorboard_logger:
+    _target_: rl4co.utils.callbacks.tensorboard_logger.TensorBoardLogger
+    train_metrics: ["reward", "loss", "entropy"]
+    val_metrics: ["reward", "loss"]
+    test_metrics: ["reward"]
+
+seed: 1234
