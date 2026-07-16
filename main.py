@@ -199,7 +199,9 @@ def infer_model_kind(state_dict: dict[str, Any], hparams: dict[str, Any]) -> str
 
 
 def load_nco_model(ckpt_path: Path, env: PartConsolidationEnv, device: torch.device):
-    ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+    # Load checkpoints on CPU first. Lightning checkpoints may contain serialized
+    # env objects, and their RNG state must remain a CPU ByteTensor during unpickle.
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     state_dict = ckpt["state_dict"]
     hparams = ckpt.get("hyper_parameters", {})
     policy_kwargs = dict(hparams.get("policy_kwargs", {}))
@@ -410,10 +412,11 @@ def print_summary(rows: list[dict[str, Any]]) -> None:
         feasible = np.mean([float(row.get("feasible", 0.0)) for row in alg_rows])
         num_groups = np.mean([float(row.get("num_groups", 0.0)) for row in alg_rows])
         elapsed = np.mean([row["wall_elapsed_sec"] for row in alg_rows])
+        total_elapsed = np.sum([row["wall_elapsed_sec"] for row in alg_rows])
         print(
             f"{name:>6} | n={len(alg_rows):4d} | score={score: .6f} | "
             f"feasible={feasible: .3f} | groups={num_groups: .2f} | "
-            f"time={elapsed: .4f}s/inst"
+            f"time={elapsed: .4f}s/inst | total={total_elapsed: .4f}s"
         )
 
 
