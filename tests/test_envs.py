@@ -22,6 +22,7 @@ from rl4co.envs import (
     MTSPEnv,
     MTVRPEnv,
     OPEnv,
+    PartConsolidationEnv,
     PCTSPEnv,
     PDPEnv,
     SDVRPEnv,
@@ -140,6 +141,12 @@ def test_jssp_lb(env_cls):
 @pytest.mark.parametrize("env_cls", [FLPEnv, MCPEnv])
 def test_flp_mcp(env_cls, batch_size=2):
     env = env_cls()
+    reward, td, actions = rollout(env, env.reset(batch_size=[batch_size]), random_policy)
+    assert reward.shape == (batch_size,)
+
+
+def test_pc(batch_size=2, size=20):
+    env = PartConsolidationEnv(generator_params=dict(num_parts=size))
     reward, td, actions = rollout(env, env.reset(batch_size=[batch_size]), random_policy)
     assert reward.shape == (batch_size,)
 

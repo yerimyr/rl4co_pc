@@ -22,6 +22,7 @@ from rl4co.utils.test_utils import generate_env_data
         "smtwtp",
         "flp",
         "mcp",
+        "pc",
     ],
 )
 def test_am_policy(env_name, size=20, batch_size=2):
@@ -33,14 +34,14 @@ def test_am_policy(env_name, size=20, batch_size=2):
 
 
 @pytest.mark.parametrize(
-    "env_name", ["tsp", "cvrp", "cvrptw", "pctsp", "spctsp", "sdvrp", "op", "pdp"]
+    "env_name", ["tsp", "cvrp", "cvrptw", "pctsp", "spctsp", "sdvrp", "op", "pdp", "pc"]
 )
 @pytest.mark.parametrize("policy_cls", [AttentionModelPolicy])
 def test_policy_multistart(env_name, policy_cls, size=20, batch_size=2):
     env, x = generate_env_data(env_name, size, batch_size)
     td = env.reset(x)
     policy = policy_cls(env_name=env.name)
-    num_starts = size // 2 if env.name in ["pdp"] else size
+    num_starts = 4 if env.name in ["pc"] else size // 2 if env.name in ["pdp"] else size
     out = policy(
         td,
         env,

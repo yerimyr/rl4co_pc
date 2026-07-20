@@ -20,7 +20,7 @@ model:
     weight_decay: 1e-6
 
 trainer:
-  max_epochs: 50
+  max_epochs: 100
   enable_progress_bar: false
   enable_model_summary: false
 

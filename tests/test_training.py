@@ -8,6 +8,7 @@ from rl4co.envs import (
     CVRPMVCEnv,
     FJSPEnv,
     JSSPEnv,
+    PartConsolidationEnv,
     PDPEnv,
     PDPRuinRepairEnv,
     TSPEnv,
@@ -75,6 +76,23 @@ def test_ppo():
     policy = AttentionModelPolicy(env_name=env.name)
     model = PPO(env, policy, train_data_size=10, val_data_size=10, test_data_size=10)
     trainer = RL4COTrainer(max_epochs=1, gradient_clip_val=None, devices=1, accelerator=accelerator)
+    trainer.fit(model)
+    trainer.test(model)
+
+
+def test_pc_reinforce():
+    env = PartConsolidationEnv(generator_params=dict(num_parts=20))
+    policy = AttentionModelPolicy(env_name=env.name)
+    model = REINFORCE(
+        env,
+        policy,
+        baseline="no",
+        train_data_size=10,
+        val_data_size=10,
+        test_data_size=10,
+        batch_size=2,
+    )
+    trainer = RL4COTrainer(max_epochs=1, devices=1, accelerator="cpu")
     trainer.fit(model)
     trainer.test(model)
 

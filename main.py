@@ -66,9 +66,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nco-batch-size", type=int, default=256)
 
     parser.add_argument("--ga-pop-size", type=int, default=120)
-    parser.add_argument("--ga-generations", type=int, default=300)
+    parser.add_argument("--ga-generations", type=int, default=20000)  # 300
     parser.add_argument("--sa-iterations", type=int, default=10_000)
     parser.add_argument("--cpccd-alpha", type=float, default=0.3)
+    parser.add_argument(
+        "--plot-history",
+        action="store_true",
+        help="Save GA/SA optimization history plots under outputs/plots.",
+    )
+    parser.add_argument(
+        "--plot-dir",
+        type=Path,
+        default=Path("outputs/plots"),
+        help="Directory used when --plot-history is enabled.",
+    )
     return parser.parse_args()
 
 
@@ -179,6 +190,26 @@ def make_solver(name: str, args: argparse.Namespace, seed: int) -> Any:
     raise ValueError(f"Unknown algorithm: {name}")
 
 
+def save_solver_plot(name: str, solver: Any, idx: int, args: argparse.Namespace) -> str | None:
+    if not args.plot_history:
+        return None
+
+    name = name.lower()
+    if name == "ga" and hasattr(solver, "plot_fitness_history"):
+        plot_dir = args.plot_dir / "ga_graph"
+        plot_dir.mkdir(parents=True, exist_ok=True)
+        save_path = plot_dir / f"instance_{idx:04d}_ga_fitness_history.png"
+        return solver.plot_fitness_history(str(save_path), show=False)
+
+    if name == "sa" and hasattr(solver, "plot_history"):
+        plot_dir = args.plot_dir / "sa_graph"
+        plot_dir.mkdir(parents=True, exist_ok=True)
+        save_path = plot_dir / f"instance_{idx:04d}_sa_history.png"
+        return solver.plot_history(str(save_path), show=False)
+
+    return None
+
+
 def make_env_from_dataset(dataset: Any, device: torch.device) -> PartConsolidationEnv:
     sample = dataset[0]
     generator_params = {
@@ -271,6 +302,7 @@ def evaluate_algorithm(
         started = time.perf_counter()
         groups, solver_elapsed = solver.solve(inst)
         wall_elapsed = time.perf_counter() - started
+        plot_path = save_solver_plot(name, solver, idx, args)
 
         metrics = score_metric_rows([evaluate_groups(groups, inst)])[0]
         score = metrics["score"]
@@ -284,6 +316,8 @@ def evaluate_algorithm(
             "wall_elapsed_sec": float(wall_elapsed),
             "groups": json.dumps(groups),
         }
+        if plot_path is not None:
+            row["plot_path"] = plot_path
         row.update({key: clean_value(value) for key, value in metrics.items()})
         rows.append(row)
 

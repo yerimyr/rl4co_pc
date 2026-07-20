@@ -9,6 +9,7 @@ from rl4co.envs import (
     MDPPEnv,
     MTSPEnv,
     OPEnv,
+    PartConsolidationEnv,
     PCTSPEnv,
     PDPEnv,
     PDPRuinRepairEnv,
@@ -51,6 +52,8 @@ def get_env(name, size):
             env = MCPEnv()
         case "flp":
             env = FLPEnv()
+        case "pc":
+            env = PartConsolidationEnv(generator_params=dict(num_parts=size))
         case _:
             raise ValueError(f"Unknown env_name: {name}")
 
