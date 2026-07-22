@@ -38,13 +38,13 @@ def parse_args() -> argparse.Namespace:
         default="all",
         help="Which NCO algorithm to tune.",
     )
-    parser.add_argument("--n-trials", type=int, default=30)
+    parser.add_argument("--n-trials", type=int, default=50)
     parser.add_argument("--study-name", type=str, default=None)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--storage", type=str, default=None, help="Optuna storage URL. Defaults to per-algorithm SQLite.")
     parser.add_argument("--seed", type=int, default=1234)
-    parser.add_argument("--max-epochs", type=int, default=30)
-    parser.add_argument("--train-data-size", type=int, default=512)
+    parser.add_argument("--max-epochs", type=int, default=50)
+    parser.add_argument("--train-data-size", type=int, default=256)
     parser.add_argument("--val-data-size", type=int, default=256)
     parser.add_argument("--test-data-size", type=int, default=256)
     parser.add_argument("--val-batch-size", type=int, default=256)

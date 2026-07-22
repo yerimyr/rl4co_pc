@@ -10,9 +10,11 @@ critic_kwargs:
 
 mini_batch_size: 64
 ppo_epochs: 2
+vf_lambda: 0.5
+entropy_lambda: 0.001
 
 metrics:
-  train: ["loss", "reward", "surrogate_loss", "value_loss", "entropy"]
+  train: ["loss", "reward", "surrogate_loss", "value_loss", "value_loss_term", "entropy", "entropy_loss"]
   val: ["reward"]
   test: ${model.metrics.val}
   log_on_step: True

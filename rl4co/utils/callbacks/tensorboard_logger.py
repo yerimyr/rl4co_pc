@@ -15,6 +15,9 @@ class TensorBoardLogger(Callback):
         train_metrics: list[str] | tuple[str, ...] = ("reward", "loss", "entropy"),
         val_metrics: list[str] | tuple[str, ...] = ("reward", "loss"),
         test_metrics: list[str] | tuple[str, ...] = ("reward",),
+        train_groups: dict[str, list[str]] | None = None,
+        val_groups: dict[str, list[str]] | None = None,
+        test_groups: dict[str, list[str]] | None = None,
         train_prefix: str = "train_epoch",
         val_prefix: str = "val_epoch",
         test_prefix: str = "test_epoch",
@@ -26,6 +29,11 @@ class TensorBoardLogger(Callback):
         self.train_prefix = train_prefix
         self.val_prefix = val_prefix
         self.test_prefix = test_prefix
+        self._groups = {
+            "train": train_groups or {},
+            "val": val_groups or {},
+            "test": test_groups or {},
+        }
         self._buffers = {
             "train": defaultdict(list),
             "val": defaultdict(list),
@@ -125,5 +133,19 @@ class TensorBoardLogger(Callback):
                 experiment = getattr(logger, "experiment", None)
                 if hasattr(experiment, "add_scalar"):
                     experiment.add_scalar(tag, value, step)
+
+        for group_name, metric_names in self._groups[phase].items():
+            scalars = {}
+            for metric_name in metric_names:
+                values = self._buffers[phase].get(metric_name)
+                if values:
+                    scalars[metric_name] = torch.stack(values).mean().item()
+            if not scalars:
+                continue
+            tag = f"{prefix}/{group_name}"
+            for logger in loggers:
+                experiment = getattr(logger, "experiment", None)
+                if hasattr(experiment, "add_scalars"):
+                    experiment.add_scalars(tag, scalars, step)
 
         self._buffers[phase].clear()

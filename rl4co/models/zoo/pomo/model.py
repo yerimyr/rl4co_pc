@@ -140,4 +140,9 @@ class POMO(REINFORCE):
                     out.update({"best_aug_actions": gather_by_index(actions_, max_idxs)})
 
         metrics = self.log_metrics(out, phase, dataloader_idx=dataloader_idx)
-        return {"loss": out.get("loss", None), **metrics}
+        step_out = {"loss": out.get("loss", None), **metrics}
+        if phase == "test":
+            test_reward = out.get("max_aug_reward", out.get("max_reward", out.get("reward", None)))
+            if test_reward is not None:
+                step_out["_test_rewards"] = test_reward.detach().reshape(-1)
+        return step_out

@@ -196,10 +196,12 @@ class PPO(RL4COLitModule):
                     value_loss = F.huber_loss(value_pred, previous_reward)
 
                     # compute total loss
+                    value_loss_term = self.ppo_cfg["vf_lambda"] * value_loss
+                    entropy_loss = -self.ppo_cfg["entropy_lambda"] * entropy.mean()
                     loss = (
                         surrogate_loss
-                        + self.ppo_cfg["vf_lambda"] * value_loss
-                        - self.ppo_cfg["entropy_lambda"] * entropy.mean()
+                        + value_loss_term
+                        + entropy_loss
                     )
 
                     # perform manual optimization following the Lightning routine
@@ -221,9 +223,14 @@ class PPO(RL4COLitModule):
                     "loss": loss,
                     "surrogate_loss": surrogate_loss,
                     "value_loss": value_loss,
+                    "value_loss_term": value_loss_term,
                     "entropy": entropy.mean(),
+                    "entropy_loss": entropy_loss,
                 }
             )
 
         metrics = self.log_metrics(out, phase, dataloader_idx=dataloader_idx)
-        return {"loss": out.get("loss", None), **metrics}
+        step_out = {"loss": out.get("loss", None), **metrics}
+        if phase == "test" and "reward" in out:
+            step_out["_test_rewards"] = out["reward"].detach()
+        return step_out

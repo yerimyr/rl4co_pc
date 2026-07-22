@@ -66,7 +66,10 @@ class REINFORCE(RL4COLitModule):
             out = self.calculate_loss(td, batch, out)
 
         metrics = self.log_metrics(out, phase, dataloader_idx=dataloader_idx)
-        return {"loss": out.get("loss", None), **metrics}
+        step_out = {"loss": out.get("loss", None), **metrics}
+        if phase == "test" and "reward" in out:
+            step_out["_test_rewards"] = out["reward"].detach()
+        return step_out
 
     def calculate_loss(
         self,

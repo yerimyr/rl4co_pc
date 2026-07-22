@@ -20,7 +20,7 @@ model:
     weight_decay: 1e-6
 
 trainer:
-  max_epochs: 100
+  max_epochs: 50
   enable_progress_bar: false
   enable_model_summary: false
 
@@ -29,8 +29,15 @@ callbacks:
   model_summary: null
   tensorboard_logger:
     _target_: rl4co.utils.callbacks.tensorboard_logger.TensorBoardLogger
-    train_metrics: ["reward", "loss", "entropy"]
+    train_metrics: ["reward", "loss", "surrogate_loss", "value_loss", "value_loss_term", "entropy", "entropy_loss"]
     val_metrics: ["reward", "loss"]
     test_metrics: ["reward"]
+    train_groups:
+      ppo_loss_terms: ["loss", "surrogate_loss", "value_loss_term", "entropy_loss"]
+  nco_test_result_writer:
+    _target_: rl4co.utils.callbacks.nco_test_result_writer.NCOTestResultWriter
+    output_dir: ${paths.output_dir}/test_results
+    filename: nco_test_results.csv
+    algorithm: ppo
 
 seed: 1234
