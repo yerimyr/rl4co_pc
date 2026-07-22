@@ -304,11 +304,22 @@ class GASolver:
         import matplotlib.pyplot as plt
 
         generations = list(range(len(self.last_generation_best_scores)))
+        all_time_best_raw_scores = np.maximum.accumulate(
+            self.last_generation_best_raw_scores
+        )
 
         fig, ax = plt.subplots(1, 1, figsize=(7.5, 4.5))
 
         ax.plot(generations, self.last_generation_best_raw_scores, label="Best Raw Fitness", linewidth=2)
         ax.plot(generations, self.last_generation_mean_raw_scores, label="Mean Raw Fitness", linewidth=1.8)
+        ax.step(
+            generations,
+            all_time_best_raw_scores,
+            where="post",
+            label="All-Time Best Raw Fitness",
+            color="tab:green",
+            linewidth=2.2,
+        )
         ax.set_xlabel("Generation")
         ax.set_ylabel("Raw Fitness")
         ax.set_title("GA Raw Fitness by Generation")

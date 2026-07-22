@@ -21,7 +21,7 @@ from rl4co.models.zoo.pomo import POMO
 from rl4co.utils.ops import unbatchify
 
 
-DEFAULT_DATA = Path("data/pc/pc20_test_seed1234.npz")
+DEFAULT_DATA = Path("data/pc/pc20_test_seed1234.npz")  # 1234
 DEFAULT_CKPT_ROOT = Path("logs/train/runs")
 
 
@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
+        default=300,
         help="Number of instances to evaluate. Use 0 to evaluate all instances.",
     )
     parser.add_argument("--seed", type=int, default=1234)
@@ -291,6 +291,11 @@ def evaluate_algorithm(
     rows: list[dict[str, Any]] = []
 
     for idx in range(limit):
+        print(
+            f"  Running {name}: instance {idx + 1}/{limit} "
+            f"(dataset index {idx})...",
+            flush=True,
+        )
         seed = args.seed + idx
         random.seed(seed)
         np.random.seed(seed)
