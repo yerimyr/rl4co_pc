@@ -44,7 +44,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--storage", type=str, default=None, help="Optuna storage URL. Defaults to per-algorithm SQLite.")
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--max-epochs", type=int, default=50)
-    parser.add_argument("--train-data-size", type=int, default=256)
     parser.add_argument("--val-data-size", type=int, default=256)
     parser.add_argument("--test-data-size", type=int, default=256)
     parser.add_argument("--val-batch-size", type=int, default=256)
@@ -92,6 +91,7 @@ def suggest_common_params(trial: optuna.Trial) -> dict[str, Any]:
         "lr": trial.suggest_float("lr", 1e-5, 5e-4, log=True),
         "weight_decay": trial.suggest_categorical("weight_decay", [0.0, 1e-7, 1e-6, 1e-5]),
         "batch_size": trial.suggest_categorical("batch_size", [64, 128, 256]),
+        "train_data_size": trial.suggest_categorical("train_data_size", [256, 512, 1024]),
         "embed_dim": embed_dim,
         "num_encoder_layers": trial.suggest_categorical("num_encoder_layers", [2, 3, 4]),
         "num_heads": trial.suggest_categorical("num_heads", valid_heads),
@@ -176,7 +176,7 @@ def compose_trial_cfg(args: argparse.Namespace, algorithm: str, params: dict[str
         cfg.model.batch_size = int(params["batch_size"])
         cfg.model.val_batch_size = int(args.val_batch_size)
         cfg.model.test_batch_size = int(args.test_batch_size)
-        cfg.model.train_data_size = int(args.train_data_size)
+        cfg.model.train_data_size = int(params["train_data_size"])
         cfg.model.val_data_size = int(args.val_data_size)
         cfg.model.test_data_size = int(args.test_data_size)
         cfg.model.optimizer_kwargs.lr = float(params["lr"])
