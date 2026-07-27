@@ -1,0 +1,16 @@
+_target_: rl4co.models.PCImprovementModel
+
+baseline: "no"
+
+policy_kwargs:
+  embed_dim: 128
+  hidden_dim: 256
+  num_layers: 2
+  improvement_steps: ${env.improvement_steps}
+
+metrics:
+  train: ["loss", "reward", "init_reward", "current_reward", "best_reward", "entropy"]
+  val: ["reward", "init_reward", "current_reward", "best_reward"]
+  test: ${model.metrics.val}
+  log_on_step: True
+

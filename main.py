@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--limit",
         type=int,
-        default=300,
+        default=100,
         help="Number of instances to evaluate. Use 0 to evaluate all instances.",
     )
     parser.add_argument("--seed", type=int, default=1234)
@@ -66,7 +66,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nco-batch-size", type=int, default=256)
 
     parser.add_argument("--ga-pop-size", type=int, default=120)
-    parser.add_argument("--ga-generations", type=int, default=20000)  # 300
+    parser.add_argument("--ga-generations", type=int, default=300)  # 300
     parser.add_argument("--sa-iterations", type=int, default=10_000)
     parser.add_argument("--cpccd-alpha", type=float, default=0.3)
     parser.add_argument(

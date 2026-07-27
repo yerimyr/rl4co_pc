@@ -1,0 +1,42 @@
+# @package _global_
+
+defaults:
+  - override /model: pc_improvement.yaml
+  - override /env: pc_improvement.yaml
+  - override /callbacks: default.yaml
+  - override /trainer: default.yaml
+  - override /logger: tensorboard.yaml
+
+model:
+  generate_default_data: false
+  batch_size: 128
+  val_batch_size: 256
+  test_batch_size: 256
+  train_data_size: 256
+  val_data_size: 256
+  test_data_size: 256
+  optimizer_kwargs:
+    lr: 1e-4
+    weight_decay: 1e-6
+
+trainer:
+  max_epochs: 50
+  enable_progress_bar: false
+  enable_model_summary: false
+
+callbacks:
+  rich_progress_bar: null
+  model_summary: null
+  tensorboard_logger:
+    _target_: rl4co.utils.callbacks.tensorboard_logger.TensorBoardLogger
+    train_metrics: ["reward", "loss", "init_reward", "current_reward", "best_reward", "entropy"]
+    val_metrics: ["reward", "init_reward", "current_reward", "best_reward"]
+    test_metrics: ["reward", "init_reward", "current_reward", "best_reward"]
+  nco_test_result_writer:
+    _target_: rl4co.utils.callbacks.nco_test_result_writer.NCOTestResultWriter
+    output_dir: ${paths.output_dir}/test_results
+    filename: nco_test_results.csv
+    algorithm: pc_improvement
+
+seed: 1234
+

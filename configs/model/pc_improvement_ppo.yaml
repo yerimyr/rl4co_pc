@@ -1,0 +1,38 @@
+_target_: rl4co.models.PCImprovementPPOModel
+
+policy_kwargs:
+  embed_dim: 128
+  hidden_dim: 256
+  num_layers: 2
+  improvement_steps: ${env.improvement_steps}
+
+critic_kwargs:
+  embed_dim: ${model.policy_kwargs.embed_dim}
+  hidden_dim: ${model.policy_kwargs.hidden_dim}
+  num_layers: 2
+
+clip_range: 0.2
+ppo_epochs: 2
+mini_batch_size: 64
+vf_lambda: 0.5
+entropy_lambda: 0.001
+normalize_adv: true
+max_grad_norm: 0.5
+
+metrics:
+  train:
+    [
+      "loss",
+      "surrogate_loss",
+      "value_loss",
+      "value_loss_term",
+      "entropy",
+      "entropy_loss",
+      "reward",
+      "init_reward",
+      "current_reward",
+      "best_reward",
+    ]
+  val: ["reward", "init_reward", "current_reward", "best_reward"]
+  test: ${model.metrics.val}
+  log_on_step: True

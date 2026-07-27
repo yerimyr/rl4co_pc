@@ -1,6 +1,7 @@
 import pytest
 
 from rl4co.models import AttentionModelPolicy, N2SPolicy, PointerNetworkPolicy
+from rl4co.models.nn.graph.pc_encoder import PCEdgeAwareEncoder
 from rl4co.utils.ops import select_start_nodes
 from rl4co.utils.test_utils import generate_env_data
 
@@ -29,6 +30,18 @@ def test_am_policy(env_name, size=20, batch_size=2):
     env, x = generate_env_data(env_name, size, batch_size)
     td = env.reset(x)
     policy = AttentionModelPolicy(env_name=env.name)
+    out = policy(td, env, decode_type="greedy")
+    assert out["reward"].shape == (batch_size,)
+
+
+def test_am_policy_pc_edge(size=20, batch_size=2):
+    env, x = generate_env_data("pc", size, batch_size)
+    td = env.reset(x)
+    policy = AttentionModelPolicy(
+        env_name=env.name,
+        embed_dim=128,
+        encoder=PCEdgeAwareEncoder(embed_dim=128, num_layers=1, env_name=env.name),
+    )
     out = policy(td, env, decode_type="greedy")
     assert out["reward"].shape == (batch_size,)
 

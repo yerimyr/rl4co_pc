@@ -5,7 +5,7 @@ from rl4co.envs.common.base import RL4COEnvBase
 from rl4co.envs.eda import DPPEnv, MDPPEnv
 
 # Part consolidation
-from rl4co.envs.pc import PartConsolidationEnv
+from rl4co.envs.pc import PartConsolidationEnv, PartConsolidationImprovementEnv
 
 # Graph
 from rl4co.envs.graph import FLPEnv, MCPEnv
@@ -50,6 +50,7 @@ ENV_REGISTRY = {
     "op": OPEnv,
     "pctsp": PCTSPEnv,
     "pc": PartConsolidationEnv,
+    "pc_improvement": PartConsolidationImprovementEnv,
     "pdp": PDPEnv,
     "pdp_ruin_repair": PDPRuinRepairEnv,
     "sdvrp": SDVRPEnv,
