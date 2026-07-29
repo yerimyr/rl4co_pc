@@ -39,6 +39,8 @@ class TensorBoardLogger(Callback):
             "val": defaultdict(list),
             "test": defaultdict(list),
         }
+        self._last_train_epoch_values: dict[str, float] = {}
+        self._last_val_epoch_values: dict[str, float] = {}
 
     def on_train_epoch_start(self, trainer, pl_module) -> None:
         self._buffers["train"].clear()
@@ -66,12 +68,15 @@ class TensorBoardLogger(Callback):
 
     @rank_zero_only
     def on_train_epoch_end(self, trainer, pl_module) -> None:
-        self._flush(trainer, "train", self.train_prefix, trainer.current_epoch)
+        train_values = self._flush(trainer, "train", self.train_prefix, trainer.current_epoch)
+        self._log_overfitting_train(trainer, train_values, trainer.current_epoch)
 
     @rank_zero_only
     def on_validation_epoch_end(self, trainer, pl_module) -> None:
         if not trainer.sanity_checking:
-            self._flush(trainer, "val", self.val_prefix, trainer.current_epoch)
+            val_values = self._flush(trainer, "val", self.val_prefix, trainer.current_epoch)
+            self._last_val_epoch_values = val_values
+            self._log_overfitting_validation(trainer, val_values, trainer.current_epoch)
 
     @rank_zero_only
     def on_test_epoch_end(self, trainer, pl_module) -> None:
@@ -115,19 +120,21 @@ class TensorBoardLogger(Callback):
         except (TypeError, ValueError):
             return None
 
-    def _flush(self, trainer, phase: str, prefix: str, step: int) -> None:
+    def _flush(self, trainer, phase: str, prefix: str, step: int) -> dict[str, float]:
         if not self._buffers[phase]:
-            return
+            return {}
 
         loggers = getattr(trainer, "loggers", None)
         if not loggers:
             logger = getattr(trainer, "logger", None)
             loggers = [logger] if logger is not None else []
 
+        flushed_values = {}
         for metric_name, values in self._buffers[phase].items():
             if not values:
                 continue
             value = torch.stack(values).mean().item()
+            flushed_values[metric_name] = value
             tag = f"{prefix}/{metric_name}"
             for logger in loggers:
                 experiment = getattr(logger, "experiment", None)
@@ -149,3 +156,41 @@ class TensorBoardLogger(Callback):
                     experiment.add_scalars(tag, scalars, step)
 
         self._buffers[phase].clear()
+        if phase == "train":
+            self._last_train_epoch_values = flushed_values
+        return flushed_values
+
+    def _log_overfitting_train(self, trainer, train_values: dict[str, float], step: int) -> None:
+        if "reward" not in train_values:
+            return
+        self._log_overfitting_scalars(
+            trainer,
+            {"train_reward": train_values["reward"]},
+            step,
+        )
+
+    def _log_overfitting_validation(self, trainer, val_values: dict[str, float], step: int) -> None:
+        if "reward" not in val_values:
+            return
+        self._log_overfitting_scalars(
+            trainer,
+            {"validation_reward": val_values["reward"]},
+            step,
+        )
+
+    def _log_overfitting_scalars(self, trainer, scalars: dict[str, float], step: int) -> None:
+        loggers = getattr(trainer, "loggers", None)
+        if not loggers:
+            logger = getattr(trainer, "logger", None)
+            loggers = [logger] if logger is not None else []
+
+        for logger in loggers:
+            experiment = getattr(logger, "experiment", None)
+            if hasattr(experiment, "add_scalars"):
+                experiment.add_scalars(
+                    "overfitting_check/reward",
+                    scalars,
+                    step,
+                )
+                if hasattr(experiment, "flush"):
+                    experiment.flush()

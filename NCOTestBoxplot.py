@@ -9,6 +9,13 @@ import numpy as np
 
 DEFAULT_PATTERN = "logs/train/runs/**/test_results/nco_test_results.csv"
 DEFAULT_OUTPUT_DIR = Path("outputs/nco_test_boxplot")
+METHOD_LABELS = {
+    "reinforce": "CONSTRUCTIVE_REINFORCE",
+    "ppo": "CONSTRUCTIVE_PPO",
+    "pomo": "CONSTRUCTIVE_POMO",
+    "pc_improvement": "IMPROVEMENT_REINFORCE",
+    "pc_improvement_ppo": "IMPROVEMENT_PPO",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -89,18 +96,19 @@ def save_boxplot(rows: list[dict], methods: list[str], output_path: Path) -> Non
         raise ValueError(f"No rows found for methods: {missing}")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(figsize=(8, 5))
+    labels = [METHOD_LABELS.get(method, method.upper()) for method in methods]
+    fig, ax = plt.subplots(figsize=(11, 5.5))
     try:
         boxplot = ax.boxplot(
             data,
             patch_artist=True,
-            tick_labels=[method.upper() for method in methods],
+            tick_labels=labels,
         )
     except TypeError:
         boxplot = ax.boxplot(
             data,
             patch_artist=True,
-            labels=[method.upper() for method in methods],
+            labels=labels,
         )
 
     colors = ["#9ecae1", "#fdae6b", "#a1d99b", "#bcbddc", "#fdd0a2"]
@@ -113,7 +121,10 @@ def save_boxplot(rows: list[dict], methods: list[str], output_path: Path) -> Non
     ax.set_title("PC NCO Test Score Distribution")
     ax.set_xlabel("NCO model")
     ax.set_ylabel("Score")
-    ax.tick_params(axis="x", labelsize=9)
+    ax.tick_params(axis="x", labelsize=8)
+    for label in ax.get_xticklabels():
+        label.set_rotation(18)
+        label.set_ha("right")
     ax.grid(True, axis="y", alpha=0.25)
     ax.legend()
     fig.tight_layout()
