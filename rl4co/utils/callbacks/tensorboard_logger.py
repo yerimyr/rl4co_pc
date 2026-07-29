@@ -186,11 +186,6 @@ class TensorBoardLogger(Callback):
 
         for logger in loggers:
             experiment = getattr(logger, "experiment", None)
-            if hasattr(experiment, "add_scalars"):
-                experiment.add_scalars(
-                    "overfitting_check/reward",
-                    scalars,
-                    step,
-                )
-                if hasattr(experiment, "flush"):
-                    experiment.flush()
+            if hasattr(experiment, "add_scalar"):
+                for name, value in scalars.items():
+                    experiment.add_scalar(f"overfitting_check/reward/{name}", value, step)

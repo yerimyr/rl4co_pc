@@ -15,7 +15,12 @@ class FilteredTensorBoardLogger(TensorBoardLogger):
     ``train_epoch/*``, ``val_epoch/*``, and ``test_epoch/*``.
     """
 
-    allowed_prefixes = ("train_epoch/", "val_epoch/", "test_epoch/", "overfitting_check")
+    allowed_prefixes = (
+        "train_epoch/",
+        "val_epoch/",
+        "test_epoch/",
+        "overfitting_check/reward/",
+    )
 
     @rank_zero_only
     def log_metrics(self, metrics: dict[str, Any], step: int | None = None) -> None:
