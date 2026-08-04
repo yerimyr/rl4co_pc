@@ -122,8 +122,6 @@ class PartConsolidationEnv(RL4COEnvBase):
         selected = td["selected"].bool()
         current_group = td["current_group_mask"].bool()
         valid = td["valid_part_mask"].bool()
-        size = td["size"].float()
-        build_limit = td["build_limit"].float()
         assembly_adj = td["assembly_adj"].bool()
         isstandard = td["isstandard"].bool()
         bad_pair = td["mat_var"].bool() | td["maint_diff"].bool() | td["rel_motion"].bool()
@@ -132,8 +130,6 @@ class PartConsolidationEnv(RL4COEnvBase):
         candidate_eye = torch.eye(N, dtype=torch.bool, device=selected.device).unsqueeze(0)
         candidate_groups = current_group[:, None, :] | candidate_eye
 
-        candidate_size = torch.einsum("ban,bnd->bad", candidate_groups.float(), size)
-        size_ok = candidate_size.le(build_limit[:, None, :]).all(dim=-1)
         cardinality = candidate_groups.sum(dim=-1)
         standard_ok = ~(candidate_groups & isstandard[:, None, :]).any(dim=-1) | cardinality.le(1)
         no_bad_pair = ~(
@@ -150,7 +146,7 @@ class PartConsolidationEnv(RL4COEnvBase):
         ).any(dim=(-1, -2))
         connected_ok = ~group_nonempty[:, None] | connected_to_group
 
-        part_mask = valid & ~selected & size_ok & standard_ok & no_bad_pair & connected_ok
+        part_mask = valid & ~selected & standard_ok & no_bad_pair & connected_ok
         part_mask[:, 0] = False
 
         remaining_after = (valid[:, 1:] & ~selected[:, 1:]).any(dim=-1)
@@ -251,8 +247,6 @@ class PartConsolidationEnv(RL4COEnvBase):
                 feasible_pair_count[b] += self._group_feasible_pair_count(group, td["compat"][b])
                 if not self._group_feasible(
                     group,
-                    td["size"][b],
-                    td["build_limit"][b],
                     td["isstandard"][b],
                     td["mat_var"][b],
                     td["maint_diff"][b],
@@ -323,8 +317,6 @@ class PartConsolidationEnv(RL4COEnvBase):
     def _group_feasible(
         self,
         group: list[int],
-        size: torch.Tensor,
-        build_limit: torch.Tensor,
         isstandard: torch.Tensor,
         mat_var: torch.Tensor,
         maint_diff: torch.Tensor,
@@ -334,8 +326,6 @@ class PartConsolidationEnv(RL4COEnvBase):
         if not group:
             return True
         if len(group) >= 2 and isstandard[group].bool().any():
-            return False
-        if not torch.all(size[group].sum(dim=0) <= build_limit):
             return False
         for i in range(len(group)):
             for j in range(i + 1, len(group)):

@@ -14,16 +14,22 @@ from rl4co.envs.common.utils import Generator
 class FPIGeneratorParams:
     num_parts: int = 4
     max_num_parts: int | None = None
-    material_types: int = 3
+    material_types: int | None = None
     L_low: float = 5.0
-    L_high: float = 120.0
+    L_high: float = 100.0
     W_low: float = 5.0
-    W_high: float = 55.0
-    H_low: float = 2.0
-    H_high: float = 24.0
-    p_maint_H: float = 0.10
-    p_standard: float = 0.10
-    p_relative_motion: float = 0.10
+    W_high: float = 100.0
+    H_low: float = 5.0
+    H_high: float = 100.0
+    p_maint_H_low: float = 0.10
+    p_maint_H_high: float = 0.50
+    p_standard_low: float = 0.10
+    p_standard_high: float = 0.50
+    p_relative_motion_low: float = 0.10
+    p_relative_motion_high: float = 0.50
+    p_maint_H: float | None = None
+    p_standard: float | None = None
+    p_relative_motion: float | None = None
     p_extra_edge: float = 0.50
     topology_mode: str = "mixed"
     p_chain: float = 0.10
@@ -32,9 +38,6 @@ class FPIGeneratorParams:
     p_two_module_bridge: float = 0.35
     p_dense_clustered: float = 0.60
     p_sparse_random: float = 0.10
-    build_limit_L: float = 1000.0
-    build_limit_W: float = 1000.0
-    build_limit_H: float = 500.0
 
 
 class FPIGenerator(Generator):
@@ -54,6 +57,7 @@ class FPIGenerator(Generator):
 
         self.num_parts = self.max_num_parts
         self.num_nodes = self.max_num_parts + 1
+        self.max_material_types = int(self.p.material_types or self.max_num_parts)
         self.topology_names = [
             "chain",
             "star",
@@ -62,12 +66,8 @@ class FPIGenerator(Generator):
             "dense_clustered",
             "sparse_random",
         ]
-        self.node_feat_dim = self.p.material_types + 3 + 1 + 1 + 1
+        self.node_feat_dim = self.max_material_types + 3 + 1 + 1 + 1
         self.edge_feat_dim = 1 + 1 + 3 + 1 + 1
-        self.build_limit = torch.tensor(
-            [self.p.build_limit_L, self.p.build_limit_W, self.p.build_limit_H],
-            dtype=torch.float32,
-        )
 
     def _add_undirected_edge(self, adj: torch.Tensor, i: int, j: int) -> None:
         if i != j:
@@ -99,6 +99,22 @@ class FPIGenerator(Generator):
         )
         probs = probs / probs.sum().clamp_min(1e-8)
         return int(torch.multinomial(probs, num_samples=1).item())
+
+    @staticmethod
+    def _sample_probability(low: float, high: float, device: torch.device) -> float:
+        low = float(low)
+        high = float(high)
+        if high < low:
+            raise ValueError(f"Probability upper bound must be >= lower bound, got {low}, {high}")
+        return float((torch.rand(1, device=device) * (high - low) + low).item())
+
+    @classmethod
+    def _sample_probability_or_fixed(
+        cls, fixed: float | None, low: float, high: float, device: torch.device
+    ) -> float:
+        if fixed is not None:
+            return float(fixed)
+        return cls._sample_probability(low, high, device)
 
     def _build_chain_adjacency(self, n: int, device: torch.device) -> torch.Tensor:
         adj = torch.zeros((n, n), dtype=torch.bool, device=device)
@@ -233,7 +249,6 @@ class FPIGenerator(Generator):
         material_type_count = torch.ones((B,), dtype=torch.long, device=device)
         valid_part_mask = torch.zeros((B, N + 1), dtype=torch.bool, device=device)
         valid_part_mask[:, 0] = True
-        build_limit = self.build_limit.to(device).unsqueeze(0).repeat(B, 1)
 
         for b in range(B):
             n = int(torch.randint(self.min_num_parts, self.max_num_parts + 1, (1,)).item())
@@ -241,8 +256,9 @@ class FPIGenerator(Generator):
             valid_part_mask[b, 1 : n + 1] = True
             eye = torch.eye(n, dtype=torch.bool, device=device)
 
-            material_type_count[b] = self.p.material_types
-            material = torch.randint(0, self.p.material_types, (n,), device=device)
+            instance_material_types = int(torch.randint(1, n + 1, (1,), device=device).item())
+            material_type_count[b] = instance_material_types
+            material = torch.randint(0, instance_material_types, (n,), device=device)
             size = torch.stack(
                 [
                     torch.rand((n,), device=device) * (self.p.L_high - self.p.L_low) + self.p.L_low,
@@ -251,8 +267,20 @@ class FPIGenerator(Generator):
                 ],
                 dim=-1,
             ).float()
-            maintfreq = (torch.rand((n,), device=device) < self.p.p_maint_H).long()
-            isstandard = (torch.rand((n,), device=device) < self.p.p_standard).long()
+            p_maint_H = self._sample_probability_or_fixed(
+                self.p.p_maint_H,
+                self.p.p_maint_H_low, self.p.p_maint_H_high, device
+            )
+            p_standard = self._sample_probability_or_fixed(
+                self.p.p_standard,
+                self.p.p_standard_low, self.p.p_standard_high, device
+            )
+            p_relative_motion = self._sample_probability_or_fixed(
+                self.p.p_relative_motion,
+                self.p.p_relative_motion_low, self.p.p_relative_motion_high, device
+            )
+            maintfreq = (torch.rand((n,), device=device) < p_maint_H).long()
+            isstandard = (torch.rand((n,), device=device) < p_standard).long()
 
             topo_id = self._sample_topology_id(device)
             topology_id[b] = topo_id
@@ -263,19 +291,19 @@ class FPIGenerator(Generator):
             mat_var = (material.unsqueeze(-1) != material.unsqueeze(-2)) & adj_parts
             stack_size_full = size.unsqueeze(-2) + size.unsqueeze(-3)
             maint_diff = (maintfreq.unsqueeze(-1) != maintfreq.unsqueeze(-2)) & adj_parts
-            rel = torch.rand((n, n), device=device) < self.p.p_relative_motion
+            rel = torch.rand((n, n), device=device) < p_relative_motion
             rel = (torch.triu(rel, diagonal=1) | torch.triu(rel, diagonal=1).transpose(-1, -2)) & ~eye
             rel_motion = rel & adj_parts
 
             stack_size = stack_size_full * adj_parts.unsqueeze(-1).float()
-            stack_ok = (stack_size_full <= self.build_limit.to(device).view(1, 1, 3)).all(dim=-1)
+            stack_ok = torch.ones((n, n), dtype=torch.bool, device=device)
             standard_pair_block = isstandard.unsqueeze(-1).bool() | isstandard.unsqueeze(-2).bool()
             compat_parts = (
                 adj_parts & ~mat_var & ~maint_diff & ~rel_motion & stack_ok & ~standard_pair_block
             ) | eye
 
             mat_oh = torch.nn.functional.one_hot(
-                material, num_classes=self.p.material_types
+                material, num_classes=self.max_material_types
             ).float()
             part_node_features = torch.cat(
                 [
@@ -336,8 +364,6 @@ class FPIGenerator(Generator):
                 "compat": compat,
                 "relation_valid": relation_valid,
                 "relation_consistent": relation_consistent,
-                "build_limit": build_limit,
             },
             batch_size=batch_size,
         )
-

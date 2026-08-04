@@ -13,8 +13,6 @@ METHOD_LABELS = {
     "reinforce": "CONSTRUCTIVE_REINFORCE",
     "ppo": "CONSTRUCTIVE_PPO",
     "pomo": "CONSTRUCTIVE_POMO",
-    "pc_improvement": "IMPROVEMENT_REINFORCE",
-    "pc_improvement_ppo": "IMPROVEMENT_PPO",
 }
 
 
@@ -97,7 +95,7 @@ def save_boxplot(rows: list[dict], methods: list[str], output_path: Path) -> Non
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     labels = [METHOD_LABELS.get(method, method.upper()) for method in methods]
-    fig, ax = plt.subplots(figsize=(11, 5.5))
+    fig, ax = plt.subplots(figsize=(8.5, 5.5))
     try:
         boxplot = ax.boxplot(
             data,
@@ -122,9 +120,6 @@ def save_boxplot(rows: list[dict], methods: list[str], output_path: Path) -> Non
     ax.set_xlabel("NCO model")
     ax.set_ylabel("Score")
     ax.tick_params(axis="x", labelsize=8)
-    for label in ax.get_xticklabels():
-        label.set_rotation(18)
-        label.set_ha("right")
     ax.grid(True, axis="y", alpha=0.25)
     ax.legend()
     fig.tight_layout()

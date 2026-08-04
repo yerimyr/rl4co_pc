@@ -21,7 +21,7 @@ from rl4co.models.zoo.pomo import POMO
 from rl4co.utils.ops import unbatchify
 
 
-DEFAULT_DATA = Path("data/pc/pc20_test_seed1234.npz")  # 1234
+DEFAULT_DATA = Path("data/pc/pc20_newdist_test_seed1234.npz")  # 1234
 DEFAULT_CKPT_ROOT = Path("logs/train/runs")
 
 
@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
+        default=1000,
         help="Number of instances to evaluate. Use 0 to evaluate all instances.",
     )
     parser.add_argument("--seed", type=int, default=1234)
@@ -157,9 +157,6 @@ def strip_sep_instance(td_item: Any) -> dict[str, Any]:
                 inst[key] = value[node_slice, node_slice]
             else:
                 inst[key] = clean_value(value)
-
-    if "build_limit" in td_item.keys():
-        inst["build_limit"] = to_numpy(td_item["build_limit"])
 
     return inst
 

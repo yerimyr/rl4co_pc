@@ -9,23 +9,10 @@ DEFAULT_MODULARITY_GAMMA = 0.5  # 1.0
 DEFAULT_OBJECTIVE_SCALE = 1000.0
 
 
-def group_size_ok(group: list[int], inst) -> bool:
-    size = np.asarray(inst["size"])
-    build_limit = np.asarray(inst["build_limit"])
-    if size.ndim == 1:
-        return bool(np.sum(size[group]) <= build_limit)
-    return bool(np.all(np.sum(size[group], axis=0) <= build_limit))
-
-
 def node_feasible(node: int, inst) -> bool:
     if "material_available" in inst and not np.asarray(inst["material_available"])[node]:
         return False
-
-    size = np.asarray(inst["size"])
-    build_limit = np.asarray(inst["build_limit"])
-    if size.ndim == 1:
-        return bool(size[node] <= build_limit)
-    return bool(np.all(size[node] <= build_limit))
+    return True
 
 
 def connected(group: list[int], inst) -> bool:
@@ -59,8 +46,6 @@ def group_feasible(group: list[int], inst) -> bool:
     if any(not node_feasible(node, inst) for node in group):
         return False
     if len(group) >= 2 and "isstandard" in inst and np.asarray(inst["isstandard"])[group].any():
-        return False
-    if not group_size_ok(group, inst):
         return False
     if not no_pairwise_conflict(group, inst):
         return False
@@ -203,4 +188,3 @@ def score_metric_rows_by_group(
     for items in grouped.values():
         scored.extend(score_metric_rows(items, weights=weights))
     return scored
-

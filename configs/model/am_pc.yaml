@@ -1,6 +1,6 @@
 _target_: rl4co.models.AttentionModel
 
-baseline: "no"
+baseline: "no"  # "greedy"
 
 policy_kwargs:
   embed_dim: 128

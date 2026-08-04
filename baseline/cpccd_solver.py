@@ -178,10 +178,6 @@ class CPCCDSolver:
             self._add_conflict("CF_PairRule", pair, "pair compatibility failed")
             return False
 
-        if include_size and not self._group_size_ok([u, v], inst):
-            self._add_conflict("CF_SizeLimit", pair, "pair size limit failed")
-            return False
-
         if not self._connected([u, v], inst):
             self._add_conflict("CF_Disconnected", pair, "pair connectivity failed")
             return False
@@ -197,27 +193,7 @@ class CPCCDSolver:
             self._add_conflict("CF_Material0", (node,), "material unavailable for AM")
             return False
 
-        size = np.asarray(inst["size"])
-        build_limit = inst["build_limit"]
-        if np.ndim(size) == 2:
-            if np.any(size[node] > build_limit):
-                self._add_conflict("CF_SizeLimit", (node,), "single node exceeds build limit")
-                return False
-        else:
-            if size[node] > build_limit:
-                self._add_conflict("CF_SizeLimit", (node,), "single node exceeds build limit")
-                return False
-
         return True
-
-    def _group_size_ok(self, group: list[int], inst) -> bool:
-        size = np.asarray(inst["size"])
-        build_limit = np.asarray(inst["build_limit"])
-        if size.ndim == 1:
-            total = np.sum(size[group])
-            return bool(total <= build_limit)
-        total = np.sum(size[group], axis=0)
-        return bool(np.all(total <= build_limit))
 
     def _connected(self, group: list[int], inst) -> bool:
         adj = np.asarray(inst["assembly_adj"])
@@ -262,10 +238,6 @@ class CPCCDSolver:
         for node in group:
             if not self._node_feasible(node, inst):
                 return False
-
-        if not self._group_size_ok(group, inst):
-            self._add_conflict("CF_SizeLimit", tuple(group), "group size limit failed")
-            return False
 
         for i in group:
             for j in group:

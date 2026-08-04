@@ -303,8 +303,6 @@ class SASolver:
             return False
         if len(group) >= 2 and "isstandard" in inst and np.asarray(inst["isstandard"])[group].any():
             return False
-        if not self._group_size_ok(group, inst):
-            return False
         if not self._no_pairwise_conflict(group, inst):
             return False
         return self._connected(group, inst)
@@ -312,18 +310,7 @@ class SASolver:
     def _node_feasible(self, node: int, inst) -> bool:
         if "material_available" in inst and not np.asarray(inst["material_available"])[node]:
             return False
-        size = np.asarray(inst["size"])
-        build_limit = np.asarray(inst["build_limit"])
-        if size.ndim == 1:
-            return bool(size[node] <= build_limit)
-        return bool(np.all(size[node] <= build_limit))
-
-    def _group_size_ok(self, group: list[int], inst) -> bool:
-        size = np.asarray(inst["size"])
-        build_limit = np.asarray(inst["build_limit"])
-        if size.ndim == 1:
-            return bool(np.sum(size[group]) <= build_limit)
-        return bool(np.all(np.sum(size[group], axis=0) <= build_limit))
+        return True
 
     def _no_pairwise_conflict(self, group: list[int], inst) -> bool:
         mat_var = np.asarray(inst.get("mat_var", np.zeros_like(inst["assembly_adj"])))

@@ -619,9 +619,6 @@ class GASolver:
     def _group_penalty(self, group: list[int], inst) -> float:
         penalty = 0.0
 
-        if not self._group_size_ok(group, inst):
-            penalty += 50.0
-
         for node in group:
             if not self._node_feasible(node, inst):
                 penalty += 25.0
@@ -878,19 +875,7 @@ class GASolver:
     def _node_feasible(self, node: int, inst) -> bool:
         if "material_available" in inst and not np.asarray(inst["material_available"])[node]:
             return False
-
-        size = np.asarray(inst["size"])
-        build_limit = np.asarray(inst["build_limit"])
-        if size.ndim == 1:
-            return bool(size[node] <= build_limit)
-        return bool(np.all(size[node] <= build_limit))
-
-    def _group_size_ok(self, group: list[int], inst) -> bool:
-        size = np.asarray(inst["size"])
-        build_limit = np.asarray(inst["build_limit"])
-        if size.ndim == 1:
-            return bool(np.sum(size[group]) <= build_limit)
-        return bool(np.all(np.sum(size[group], axis=0) <= build_limit))
+        return True
 
     def _connected(self, group: list[int], inst) -> bool:
         if not group:
@@ -921,8 +906,6 @@ class GASolver:
         if any(not self._node_feasible(node, inst) for node in group):
             return False
         if len(group) >= 2 and "isstandard" in inst and np.asarray(inst["isstandard"])[group].any():
-            return False
-        if not self._group_size_ok(group, inst):
             return False
         if not self._no_pairwise_conflict(group, inst):
             return False

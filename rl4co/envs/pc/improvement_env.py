@@ -202,14 +202,12 @@ class PartConsolidationImprovementEnv(PartConsolidationEnv):
         merged = comp_i | comp_j
 
         cardinality = merged.sum(dim=-1)
-        size_sum = torch.einsum("ben,bnd->bed", merged.float(), td["size"].float())
-        size_ok = size_sum.le(td["build_limit"].float()[:, None, :]).all(dim=-1)
         standard_ok = ~(merged & td["isstandard"].bool()[:, None, :]).any(dim=-1) | cardinality.le(1)
         bad_pair = td["mat_var"].bool() | td["maint_diff"].bool() | td["rel_motion"].bool()
         no_bad_pair = ~(
             merged[:, :, :, None] & merged[:, :, None, :] & bad_pair[:, None, :, :]
         ).any(dim=(-1, -2))
-        return size_ok & standard_ok & no_bad_pair
+        return standard_ok & no_bad_pair
 
     def _get_reward(self, td: TensorDict, actions: Tensor) -> Tensor:
         return self.score_edge_bits(td["edge_bits"], td)
@@ -340,8 +338,6 @@ class PartConsolidationImprovementEnv(PartConsolidationEnv):
                     trial = sorted(group + [node])
                     if self._group_feasible(
                         trial,
-                        td["size"][b],
-                        td["build_limit"][b],
                         td["isstandard"][b],
                         td["mat_var"][b],
                         td["maint_diff"][b],
@@ -360,8 +356,6 @@ class PartConsolidationImprovementEnv(PartConsolidationEnv):
         return all(
             self._group_feasible(
                 group,
-                td["size"][batch_idx],
-                td["build_limit"][batch_idx],
                 td["isstandard"][batch_idx],
                 td["mat_var"][batch_idx],
                 td["maint_diff"][batch_idx],
