@@ -32,6 +32,7 @@ callbacks:
     train_metrics: ["reward", "loss", "surrogate_loss", "value_loss", "value_loss_term", "entropy", "entropy_loss"]
     val_metrics: ["reward", "loss"]
     test_metrics: ["reward"]
+    train_decode_check: true
     train_groups:
       ppo_loss_terms: ["loss", "surrogate_loss", "value_loss_term", "entropy_loss"]
   nco_test_result_writer:
@@ -41,4 +42,3 @@ callbacks:
     algorithm: ppo_edge
 
 seed: 1234
-

@@ -1,6 +1,6 @@
 _target_: rl4co.models.AttentionModel
 
-baseline: "no"
+baseline: "rollout"
 
 policy_kwargs:
   embed_dim: 128
@@ -11,4 +11,3 @@ policy_kwargs:
     embed_dim: ${model.policy_kwargs.embed_dim}
     num_layers: ${model.policy_kwargs.num_encoder_layers}
     env_name: pc
-

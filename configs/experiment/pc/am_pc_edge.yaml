@@ -9,18 +9,18 @@ defaults:
 
 model:
   generate_default_data: false
-  batch_size: 128
-  val_batch_size: 256
-  test_batch_size: 256
-  train_data_size: 256
-  val_data_size: 256
-  test_data_size: 256
+  batch_size: 1000
+  val_batch_size: 1000
+  test_batch_size: 1000
+  train_data_size: 10000
+  val_data_size: 1000
+  test_data_size: 1000
   optimizer_kwargs:
     lr: 1e-4
     weight_decay: 1e-6
 
 trainer:
-  max_epochs: 50
+  max_epochs: 100
   enable_progress_bar: false
   enable_model_summary: false
 
@@ -32,6 +32,7 @@ callbacks:
     train_metrics: ["reward", "loss", "entropy"]
     val_metrics: ["reward", "loss"]
     test_metrics: ["reward"]
+    train_decode_check: true
   nco_test_result_writer:
     _target_: rl4co.utils.callbacks.nco_test_result_writer.NCOTestResultWriter
     output_dir: ${paths.output_dir}/test_results
@@ -39,4 +40,3 @@ callbacks:
     algorithm: reinforce_edge
 
 seed: 1234
-
