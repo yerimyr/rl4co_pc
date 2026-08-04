@@ -14,13 +14,13 @@ from rl4co.models.nn.env_embeddings import env_init_embedding
 def pc_dense_edge_features(td: TensorDict) -> Tensor:
     """Build dense PC edge features with shape [B, N, N, F].
 
-    The generator already exposes edge_features, but W, assembly_adj, and compat
+    The generator already exposes edge_features, but W and compat
     are important PC relations as well. Keeping this conversion in one place
     makes it clear which edge tensors the edge-aware encoder consumes.
     """
 
     features = [td["edge_features"].float()]
-    for key in ("W", "assembly_adj", "compat"):
+    for key in ("W", "compat"):
         if key in td.keys():
             features.append(td[key].float().unsqueeze(-1))
     return torch.cat(features, dim=-1)
@@ -106,7 +106,7 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
 
     Inputs:
         node_features: [B, N, F_node]
-        edge_features/W/assembly_adj/compat: [B, N, N, ...]
+        edge_features/W/compat: [B, N, N, ...]
 
     Output:
         h: [B, N, embed_dim], compatible with AttentionModelDecoder.
@@ -119,7 +119,7 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
         num_layers: int = 3,
         env_name: str = "pc",
         init_embedding: nn.Module | None = None,
-        edge_input_dim: int = 10,
+        edge_input_dim: int = 9,
         dropout: float = 0.0,
     ):
         super().__init__()
