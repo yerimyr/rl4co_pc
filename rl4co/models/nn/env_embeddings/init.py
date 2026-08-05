@@ -583,19 +583,25 @@ class PCInitEmbedding(nn.Module):
     Node 0 is the SEP token and nodes 1..N are real parts.
     """
 
-    def __init__(self, embed_dim, linear_bias=True, node_dim: int = 26):
+    def __init__(self, embed_dim, linear_bias=True, node_dim: int | None = None):
         super().__init__()
-        self.node_dim = int(node_dim)
-        self.init_embed = nn.Linear(node_dim, embed_dim, bias=linear_bias)
+        self.node_dim = None if node_dim is None else int(node_dim)
+        if self.node_dim is None:
+            self.init_embed = nn.LazyLinear(embed_dim, bias=linear_bias)
+        else:
+            self.init_embed = nn.Linear(self.node_dim, embed_dim, bias=linear_bias)
 
     def forward(self, td: TensorDict):
         node_features = td["node_features"].float()
-        feature_dim = node_features.size(-1)
-        if feature_dim < self.node_dim:
-            pad = node_features.new_zeros(*node_features.shape[:-1], self.node_dim - feature_dim)
-            node_features = torch.cat([node_features, pad], dim=-1)
-        elif feature_dim > self.node_dim:
-            raise ValueError(
-                f"PC node feature dim {feature_dim} exceeds configured node_dim {self.node_dim}"
-            )
+        if self.node_dim is not None:
+            feature_dim = node_features.size(-1)
+            if feature_dim < self.node_dim:
+                pad = node_features.new_zeros(
+                    *node_features.shape[:-1], self.node_dim - feature_dim
+                )
+                node_features = torch.cat([node_features, pad], dim=-1)
+            elif feature_dim > self.node_dim:
+                raise ValueError(
+                    f"PC node feature dim {feature_dim} exceeds configured node_dim {self.node_dim}"
+                )
         return self.init_embed(node_features)
