@@ -1,6 +1,6 @@
 _target_: rl4co.models.AttentionModel
 
-baseline: "rollout"
+baseline: "no"
 
 policy_kwargs:
   embed_dim: 128

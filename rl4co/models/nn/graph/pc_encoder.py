@@ -14,15 +14,19 @@ from rl4co.models.nn.env_embeddings import env_init_embedding
 def pc_dense_edge_features(td: TensorDict) -> Tensor:
     """Build dense PC edge features with shape [B, N, N, F].
 
-    The generator already exposes edge_features, but W and compat
-    are important PC relations as well. Keeping this conversion in one place
-    makes it clear which edge tensors the edge-aware encoder consumes.
+    Edge attributes describe pair relations, while feasibility-style tensors
+    are kept as masks. The current edge embedding consumes edge_features and W.
+    Older PC datasets may still include assembly_adj as the first edge feature;
+    that redundant channel is stripped here for backward compatibility.
     """
 
-    features = [td["edge_features"].float()]
-    for key in ("W", "compat"):
-        if key in td.keys():
-            features.append(td[key].float().unsqueeze(-1))
+    edge_features = td["edge_features"].float()
+    if edge_features.size(-1) == 7:
+        edge_features = edge_features[..., 1:]
+
+    features = [edge_features]
+    if "W" in td.keys():
+        features.append(td["W"].float().unsqueeze(-1))
     return torch.cat(features, dim=-1)
 
 
@@ -36,6 +40,9 @@ def pc_edge_mask(td: TensorDict, include_self_loops: bool = False) -> Tensor:
     else:
         n = td["node_features"].size(-2)
         mask = torch.ones(*td.batch_size, n, n, dtype=torch.bool, device=td.device)
+
+    if "compat" in td.keys():
+        mask = mask & td["compat"].bool()
 
     if "valid_part_mask" in td.keys():
         valid = td["valid_part_mask"].bool()
@@ -106,7 +113,8 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
 
     Inputs:
         node_features: [B, N, F_node]
-        edge_features/W/compat: [B, N, N, ...]
+        edge_features/W: [B, N, N, ...]
+        assembly_adj/compat: [B, N, N], used as the message passing mask
 
     Output:
         h: [B, N, embed_dim], compatible with AttentionModelDecoder.
@@ -119,7 +127,7 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
         num_layers: int = 3,
         env_name: str = "pc",
         init_embedding: nn.Module | None = None,
-        edge_input_dim: int = 9,
+        edge_input_dim: int = 7,
         dropout: float = 0.0,
     ):
         super().__init__()

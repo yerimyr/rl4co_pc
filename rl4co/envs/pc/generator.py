@@ -67,7 +67,7 @@ class FPIGenerator(Generator):
             "sparse_random",
         ]
         self.node_feat_dim = self.max_material_types + 3 + 1 + 1 + 1
-        self.edge_feat_dim = 1 + 1 + 3 + 1 + 1
+        self.edge_feat_dim = 1 + 3 + 1 + 1
 
     def _add_undirected_edge(self, adj: torch.Tensor, i: int, j: int) -> None:
         if i != j:
@@ -317,7 +317,6 @@ class FPIGenerator(Generator):
             )
             part_edge_features = torch.cat(
                 [
-                    adj_parts.float().unsqueeze(-1),
                     mat_var.float().unsqueeze(-1),
                     stack_size,
                     maint_diff.float().unsqueeze(-1),
