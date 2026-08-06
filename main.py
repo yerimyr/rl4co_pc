@@ -147,7 +147,6 @@ def strip_sep_instance(td_item: Any) -> dict[str, Any]:
         "stack_size",
         "maint_diff",
         "rel_motion",
-        "compat",
         "relation_valid",
         "relation_consistent",
     ):

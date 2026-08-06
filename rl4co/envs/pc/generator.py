@@ -66,7 +66,7 @@ class FPIGenerator(Generator):
             "dense_clustered",
             "sparse_random",
         ]
-        self.node_feat_dim = self.max_material_types + 3 + 1 + 1 + 1
+        self.node_feat_dim = self.max_material_types + 3 + 1 + 1
         self.edge_feat_dim = 1 + 3 + 1 + 1
 
     def _add_undirected_edge(self, adj: torch.Tensor, i: int, j: int) -> None:
@@ -228,7 +228,6 @@ class FPIGenerator(Generator):
         maint_all = torch.full((B, N + 1), -1, dtype=torch.long, device=device)
         std_all = torch.full((B, N + 1), -1, dtype=torch.long, device=device)
         size_all = torch.zeros((B, N + 1, 3), dtype=torch.float32, device=device)
-        pos_all = torch.zeros((B, N + 1, 1), dtype=torch.float32, device=device)
         node_features = torch.zeros(
             (B, N + 1, self.node_feat_dim), dtype=torch.float32, device=device
         )
@@ -241,7 +240,6 @@ class FPIGenerator(Generator):
         edge_features = torch.zeros(
             (B, N + 1, N + 1, self.edge_feat_dim), dtype=torch.float32, device=device
         )
-        compat = torch.ones((B, N + 1, N + 1), dtype=torch.bool, device=device)
         relation_valid = torch.zeros((B, N + 1, N + 1), dtype=torch.bool, device=device)
         relation_consistent = torch.ones((B,), dtype=torch.bool, device=device)
         topology_id = torch.zeros((B,), dtype=torch.long, device=device)
@@ -285,8 +283,6 @@ class FPIGenerator(Generator):
             topo_id = self._sample_topology_id(device)
             topology_id[b] = topo_id
             adj_parts = self._build_adjacency_from_topology(topo_id, n, device)
-            degree = adj_parts.sum(dim=-1).float()
-            pos1d = (degree / degree.max().clamp_min(1.0)).unsqueeze(-1)
 
             mat_var = (material.unsqueeze(-1) != material.unsqueeze(-2)) & adj_parts
             stack_size_full = size.unsqueeze(-2) + size.unsqueeze(-3)
@@ -296,12 +292,6 @@ class FPIGenerator(Generator):
             rel_motion = rel & adj_parts
 
             stack_size = stack_size_full * adj_parts.unsqueeze(-1).float()
-            stack_ok = torch.ones((n, n), dtype=torch.bool, device=device)
-            standard_pair_block = isstandard.unsqueeze(-1).bool() | isstandard.unsqueeze(-2).bool()
-            compat_parts = (
-                adj_parts & ~mat_var & ~maint_diff & ~rel_motion & stack_ok & ~standard_pair_block
-            ) | eye
-
             mat_oh = torch.nn.functional.one_hot(
                 material, num_classes=self.max_material_types
             ).float()
@@ -311,7 +301,6 @@ class FPIGenerator(Generator):
                     size,
                     maintfreq.float().unsqueeze(-1),
                     isstandard.float().unsqueeze(-1),
-                    pos1d.float(),
                 ],
                 dim=-1,
             )
@@ -329,7 +318,6 @@ class FPIGenerator(Generator):
             maint_all[b, 1 : n + 1] = maintfreq
             std_all[b, 1 : n + 1] = isstandard
             size_all[b, 1 : n + 1, :] = size
-            pos_all[b, 1 : n + 1, :] = pos1d
             node_features[b, 1 : n + 1, :] = part_node_features
             W[b, 1 : n + 1, 1 : n + 1] = self._sample_embeddedness_weights(adj_parts)
             assembly_adj[b, 1 : n + 1, 1 : n + 1] = adj_parts
@@ -338,7 +326,6 @@ class FPIGenerator(Generator):
             rel_motion_all[b, 1 : n + 1, 1 : n + 1] = rel_motion.float()
             stack_all[b, 1 : n + 1, 1 : n + 1, :] = stack_size.float()
             edge_features[b, 1 : n + 1, 1 : n + 1, :] = part_edge_features
-            compat[b, 1 : n + 1, 1 : n + 1] = compat_parts
             relation_valid[b, 1 : n + 1, 1 : n + 1] = adj_parts
 
         return TensorDict(
@@ -353,14 +340,12 @@ class FPIGenerator(Generator):
                 "size": size_all,
                 "maintfreq": maint_all,
                 "isstandard": std_all,
-                "pos1d": pos_all,
                 "W": W,
                 "assembly_adj": assembly_adj,
                 "mat_var": mat_var_all,
                 "stack_size": stack_all,
                 "maint_diff": maint_diff_all,
                 "rel_motion": rel_motion_all,
-                "compat": compat,
                 "relation_valid": relation_valid,
                 "relation_consistent": relation_consistent,
             },

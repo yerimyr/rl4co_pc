@@ -11,11 +11,12 @@ from rl4co.models.common.constructive import AutoregressiveEncoder
 from rl4co.models.nn.env_embeddings import env_init_embedding
 
 
-def pc_dense_edge_features(td: TensorDict) -> Tensor:
+def pc_dense_edge_features(td: TensorDict, include_connection: bool = False) -> Tensor:
     """Build dense PC edge features with shape [B, N, N, F].
 
-    Edge attributes describe pair relations, while feasibility-style tensors
-    are kept as masks. The current edge embedding consumes edge_features and W.
+    Edge attributes describe pair relations. The current edge embedding consumes
+    edge_features and W by default; ablations can additionally include the
+    connection matrix as a feature instead of using it as a hard mask.
     Older PC datasets may still include assembly_adj as the first edge feature;
     that redundant channel is stripped here for backward compatibility.
     """
@@ -27,32 +28,89 @@ def pc_dense_edge_features(td: TensorDict) -> Tensor:
     features = [edge_features]
     if "W" in td.keys():
         features.append(td["W"].float().unsqueeze(-1))
+    if include_connection and "assembly_adj" in td.keys():
+        features.append(td["assembly_adj"].float().unsqueeze(-1))
     return torch.cat(features, dim=-1)
 
 
-def pc_edge_mask(td: TensorDict, include_self_loops: bool = False) -> Tensor:
-    """Return the valid directed PC edge mask [B, N, N]."""
+def pc_edge_mask(
+    td: TensorDict,
+    include_self_loops: bool = False,
+    use_compat_mask: bool = True,
+    use_message_mask: bool = True,
+) -> Tensor:
+    """Return the valid directed PC edge mask [B, N, N].
 
-    if "assembly_adj" in td.keys():
+    ``compat`` is intentionally not required in the TensorDict. When
+    ``use_compat_mask`` is enabled, the compatibility mask is derived from the
+    raw PC constraints so the same dataset can be used for with/without-compat
+    ablations.
+    """
+
+    n = td["node_features"].size(-2)
+    if not use_message_mask:
+        mask = torch.ones(*td.batch_size, n, n, dtype=torch.bool, device=td.device)
+    elif "assembly_adj" in td.keys():
         mask = td["assembly_adj"].bool().clone()
     elif "relation_valid" in td.keys():
         mask = td["relation_valid"].bool().clone()
     else:
-        n = td["node_features"].size(-2)
         mask = torch.ones(*td.batch_size, n, n, dtype=torch.bool, device=td.device)
-
-    if "compat" in td.keys():
-        mask = mask & td["compat"].bool()
 
     if "valid_part_mask" in td.keys():
         valid = td["valid_part_mask"].bool()
         mask = mask & valid.unsqueeze(-1) & valid.unsqueeze(-2)
+    else:
+        valid = None
+
+    if use_message_mask and use_compat_mask:
+        if "compat" in td.keys():
+            compat = td["compat"].bool()
+        else:
+            compat = pc_raw_compatibility_mask(td)
+        mask = mask & compat
 
     if not include_self_loops:
         n = mask.size(-1)
         eye = torch.eye(n, dtype=torch.bool, device=mask.device)
         mask = mask & ~eye
     return mask
+
+
+def pc_raw_compatibility_mask(td: TensorDict) -> Tensor:
+    """Compute pair compatibility from raw PC tensors without storing compat.
+
+    A pair is compatible for representation-level message passing when the two
+    parts can belong to the same group under the pairwise PC constraints:
+    material variation, maintenance difference, relative motion, and standard
+    part isolation. Connectivity is handled separately by ``pc_edge_mask``.
+    """
+
+    if "node_features" not in td.keys():
+        raise KeyError("pc_raw_compatibility_mask requires node_features")
+
+    n = td["node_features"].size(-2)
+    batch_shape = td.batch_size
+    device = td["node_features"].device
+
+    compat = torch.ones(*batch_shape, n, n, dtype=torch.bool, device=device)
+
+    for key in ("mat_var", "maint_diff", "rel_motion"):
+        if key in td.keys():
+            compat = compat & ~td[key].bool()
+
+    if "valid_part_mask" in td.keys():
+        valid = td["valid_part_mask"].bool()
+        compat = compat & valid.unsqueeze(-1) & valid.unsqueeze(-2)
+    else:
+        valid = torch.ones(*batch_shape, n, dtype=torch.bool, device=device)
+
+    if "isstandard" in td.keys():
+        standard = td["isstandard"].eq(1) & valid
+        standard_pair = standard.unsqueeze(-1) | standard.unsqueeze(-2)
+        compat = compat & ~standard_pair
+
+    return compat
 
 
 def pc_tensordict_to_edge_index(
@@ -114,7 +172,9 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
     Inputs:
         node_features: [B, N, F_node]
         edge_features/W: [B, N, N, ...]
-        assembly_adj/compat: [B, N, N], used as the message passing mask
+        assembly_adj: [B, N, N], used as the message passing mask
+        compat: optional legacy mask. If missing, it is derived from raw
+            constraints when use_compat_mask=True.
 
     Output:
         h: [B, N, embed_dim], compatible with AttentionModelDecoder.
@@ -129,6 +189,10 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
         init_embedding: nn.Module | None = None,
         edge_input_dim: int = 7,
         dropout: float = 0.0,
+        use_compat_mask: bool = True,
+        use_message_mask: bool = True,
+        include_connection_feature: bool = False,
+        exclude_sep_from_encoder: bool = False,
     ):
         super().__init__()
         if isinstance(env_name, RL4COEnvBase):
@@ -140,18 +204,44 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
             else init_embedding
         )
         self.edge_embedding = nn.Linear(edge_input_dim, embed_dim)
+        self.use_compat_mask = use_compat_mask
+        self.use_message_mask = use_message_mask
+        self.include_connection_feature = include_connection_feature
+        self.exclude_sep_from_encoder = exclude_sep_from_encoder
+        self.sep_embedding = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.layers = nn.ModuleList(
             [PCEdgeMessagePassingLayer(embed_dim, dropout=dropout) for _ in range(num_layers)]
         )
 
     def forward(self, td: TensorDict, mask: Tensor | None = None) -> tuple[Tensor, Tensor]:
         init_h = self.init_embedding(td)
-        edge_h = self.edge_embedding(pc_dense_edge_features(td).to(init_h.device))
-        edge_mask = pc_edge_mask(td).to(init_h.device)
+        edge_h = self.edge_embedding(
+            pc_dense_edge_features(
+                td, include_connection=self.include_connection_feature
+            ).to(init_h.device)
+        )
+        edge_mask = pc_edge_mask(
+            td,
+            use_compat_mask=self.use_compat_mask,
+            use_message_mask=self.use_message_mask,
+        ).to(init_h.device)
         if mask is not None:
             edge_mask = edge_mask & mask.bool()
 
-        h = init_h
+        if self.exclude_sep_from_encoder:
+            part_init_h = init_h[..., 1:, :]
+            edge_h = edge_h[..., 1:, 1:, :]
+            edge_mask = edge_mask[..., 1:, 1:]
+            h = part_init_h
+        else:
+            part_init_h = None
+            h = init_h
+
         for layer in self.layers:
             h = layer(h, edge_h, edge_mask)
+
+        if self.exclude_sep_from_encoder:
+            sep_h = self.sep_embedding.expand(*h.shape[:-2], 1, h.size(-1))
+            h = torch.cat([sep_h, h], dim=-2)
+            init_h = torch.cat([sep_h, part_init_h], dim=-2)
         return h, init_h

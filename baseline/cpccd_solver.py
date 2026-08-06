@@ -173,9 +173,8 @@ class CPCCDSolver:
         if not self._node_feasible(v, inst):
             return False
 
-        compat = np.asarray(inst.get("compat", np.ones_like(inst["assembly_adj"])))
-        if compat[u, v] == 0:
-            self._add_conflict("CF_PairRule", pair, "pair compatibility failed")
+        if not self._pair_constraints_ok(u, v, inst):
+            self._add_conflict("CF_PairRule", pair, "pair constraints failed")
             return False
 
         if not self._connected([u, v], inst):
@@ -212,6 +211,15 @@ class CPCCDSolver:
 
         return len(visited) == len(group)
 
+    def _pair_constraints_ok(self, u: int, v: int, inst) -> bool:
+        if "mat_var" in inst and np.asarray(inst["mat_var"])[u, v]:
+            return False
+        if "maint_diff" in inst and np.asarray(inst["maint_diff"])[u, v]:
+            return False
+        if "rel_motion" in inst and np.asarray(inst["rel_motion"])[u, v]:
+            return False
+        return True
+
     def _try_merge_pair(self, groups: list[list[int]], u: int, v: int, inst) -> list[list[int]]:
         idx_u = idx_v = None
         for idx, group in enumerate(groups):
@@ -234,15 +242,14 @@ class CPCCDSolver:
         return groups
 
     def _group_feasible(self, group: list[int], inst) -> bool:
-        compat = np.asarray(inst.get("compat", np.ones_like(inst["assembly_adj"])))
         for node in group:
             if not self._node_feasible(node, inst):
                 return False
 
-        for i in group:
-            for j in group:
-                if compat[i, j] == 0:
-                    self._add_conflict("CF_PairRule", tuple(group), "group compatibility failed")
+        for i in range(len(group)):
+            for j in range(i + 1, len(group)):
+                if not self._pair_constraints_ok(group[i], group[j], inst):
+                    self._add_conflict("CF_PairRule", tuple(group), "group constraints failed")
                     return False
 
         if not self._connected(group, inst):

@@ -238,13 +238,11 @@ class PartConsolidationEnv(RL4COEnvBase):
         infeasible_groups = torch.zeros((B,), dtype=torch.float32, device=device)
         num_groups = torch.tensor([len(g) for g in groups], dtype=torch.float32, device=device)
         total_internal_strength = torch.zeros((B,), dtype=torch.float32, device=device)
-        feasible_pair_count = torch.zeros((B,), dtype=torch.float32, device=device)
 
         for b, groups_b in enumerate(groups):
             infeasible = False
             for group in groups_b:
                 total_internal_strength[b] += self._group_internal_strength(group, td["W"][b])
-                feasible_pair_count[b] += self._group_feasible_pair_count(group, td["compat"][b])
                 if not self._group_feasible(
                     group,
                     td["isstandard"][b],
@@ -265,9 +263,6 @@ class PartConsolidationEnv(RL4COEnvBase):
             "infeasible_groups": infeasible_groups,
             "num_groups": num_groups,
             "total_internal_strength": total_internal_strength,
-            "feasible_pair_count": feasible_pair_count,
-            "normalized_internal_strength": total_internal_strength
-            / torch.clamp(feasible_pair_count, min=1.0),
             "Q_gamma": q_gamma,
             "Q_observed": q_observed,
             "Q_expected": q_expected,
@@ -306,13 +301,6 @@ class PartConsolidationEnv(RL4COEnvBase):
             for j in range(i + 1, len(group)):
                 total = total + w[group[i], group[j]]
         return total
-
-    def _group_feasible_pair_count(self, group: list[int], compat: torch.Tensor) -> torch.Tensor:
-        count = torch.tensor(0.0, device=compat.device)
-        for i in range(len(group)):
-            for j in range(i + 1, len(group)):
-                count = count + float(bool(compat[group[i], group[j]].item()))
-        return count
 
     def _group_feasible(
         self,

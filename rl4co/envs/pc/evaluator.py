@@ -61,16 +61,6 @@ def internal_strength(group: list[int], inst) -> float:
     return total
 
 
-def feasible_pair_count(group: list[int], inst) -> int:
-    compat = np.asarray(inst.get("compat", np.ones_like(inst["assembly_adj"])))
-    count = 0
-    for i in range(len(group)):
-        for j in range(i + 1, len(group)):
-            if compat[group[i], group[j]]:
-                count += 1
-    return count
-
-
 def check_r3(groups: list[list[int]], inst) -> bool:
     checker = inst.get("assembly_access_checker")
     if checker is None:
@@ -85,17 +75,14 @@ def check_r3(groups: list[list[int]], inst) -> bool:
 def evaluate_groups(groups: list[list[int]], inst) -> dict[str, float]:
     infeasible_groups = 0
     total_internal_strength = 0.0
-    total_feasible_pairs = 0
 
     for group in groups:
         feasible = group_feasible(group, inst)
         infeasible_groups += int(not feasible)
         total_internal_strength += internal_strength(group, inst)
-        total_feasible_pairs += feasible_pair_count(group, inst)
 
     infeasible_solution = int(infeasible_groups > 0 or not check_r3(groups, inst))
     num_groups = float(len(groups))
-    normalized_internal_strength = total_internal_strength / max(float(total_feasible_pairs), 1.0)
     q_gamma, q_observed, q_expected = modularity_objective(
         groups,
         inst,
@@ -107,8 +94,6 @@ def evaluate_groups(groups: list[list[int]], inst) -> dict[str, float]:
         "infeasible_groups": float(infeasible_groups),
         "num_groups": num_groups,
         "total_internal_strength": float(total_internal_strength),
-        "feasible_pair_count": float(total_feasible_pairs),
-        "normalized_internal_strength": float(normalized_internal_strength),
         "Q_gamma": float(q_gamma * DEFAULT_OBJECTIVE_SCALE),
         "Q_observed": float(q_observed * DEFAULT_OBJECTIVE_SCALE),
         "Q_expected": float(q_expected * DEFAULT_OBJECTIVE_SCALE),
@@ -144,12 +129,7 @@ def modularity_objective(
 
 def _augment_reward_metrics(row: dict) -> dict:
     out = dict(row)
-    total_internal_strength = float(out.get("total_internal_strength", 0.0))
-    feasible_pair_count_value = float(out.get("feasible_pair_count", 0.0))
     out["num_groups"] = float(out.get("num_groups", out.get("groups", 0.0)))
-    out["normalized_internal_strength"] = total_internal_strength / max(
-        feasible_pair_count_value, 1.0
-    )
     out.setdefault("Q_gamma", float(out.get("Q_gamma", 0.0)))
     out.setdefault("Q_observed", float(out.get("Q_observed", 0.0)))
     out.setdefault("Q_expected", float(out.get("Q_expected", 0.0)))

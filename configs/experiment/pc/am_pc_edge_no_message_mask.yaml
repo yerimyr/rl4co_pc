@@ -1,7 +1,7 @@
 # @package _global_
 
 defaults:
-  - override /model: am_pc_edge.yaml
+  - override /model: am_pc_edge_no_message_mask.yaml
   - override /env: pc.yaml
   - override /callbacks: default.yaml
   - override /trainer: default.yaml
@@ -37,6 +37,6 @@ callbacks:
     _target_: rl4co.utils.callbacks.nco_test_result_writer.NCOTestResultWriter
     output_dir: ${paths.output_dir}/test_results
     filename: nco_test_results.csv
-    algorithm: reinforce_edge
+    algorithm: reinforce_edge_no_message_mask
 
 seed: 1234

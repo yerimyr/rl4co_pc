@@ -5,6 +5,8 @@ from rl4co.models import AttentionModelPolicy
 from rl4co.models.nn.graph.pc_encoder import (
     PCEdgeAwareEncoder,
     pc_dense_edge_features,
+    pc_edge_mask,
+    pc_raw_compatibility_mask,
     pc_tensordict_to_edge_index,
 )
 
@@ -28,6 +30,20 @@ def test_pc_edge_conversion_shapes():
         assert edge_attr.shape[-1] == dense_edge_attr.shape[-1]
 
 
+def test_pc_raw_compatibility_mask_without_stored_compat():
+    _, td = _pc_tensordict(batch_size=2, num_parts=20)
+
+    assert "compat" not in td.keys()
+
+    raw_compat = pc_raw_compatibility_mask(td)
+    mask_with_compat = pc_edge_mask(td, use_compat_mask=True)
+    mask_without_compat = pc_edge_mask(td, use_compat_mask=False)
+
+    assert raw_compat.shape == mask_with_compat.shape == mask_without_compat.shape
+    assert torch.equal(mask_with_compat, mask_without_compat & raw_compat)
+    assert mask_with_compat.sum() <= mask_without_compat.sum()
+
+
 def test_pc_edge_encoder_output_changes_when_edges_change():
     _, td = _pc_tensordict(batch_size=2, num_parts=20)
     encoder = PCEdgeAwareEncoder(embed_dim=64, num_layers=1, env_name="pc")
@@ -49,6 +65,42 @@ def test_pc_edge_encoder_output_changes_when_edges_change():
     assert torch.isfinite(h2).all()
     assert torch.allclose(init_h1, init_h2)
     assert not torch.allclose(h1, h2)
+
+
+def test_pc_edge_encoder_can_exclude_sep_from_message_passing():
+    _, td = _pc_tensordict(batch_size=2, num_parts=20)
+    encoder = PCEdgeAwareEncoder(
+        embed_dim=64,
+        num_layers=1,
+        env_name="pc",
+        exclude_sep_from_encoder=True,
+    )
+
+    h, init_h = encoder(td)
+
+    assert h.shape == init_h.shape == (2, 21, 64)
+    assert torch.isfinite(h).all()
+    assert torch.isfinite(init_h).all()
+
+
+def test_pc_edge_encoder_can_use_connection_as_feature_without_message_mask():
+    _, td = _pc_tensordict(batch_size=2, num_parts=20)
+    encoder = PCEdgeAwareEncoder(
+        embed_dim=64,
+        num_layers=1,
+        env_name="pc",
+        edge_input_dim=8,
+        use_compat_mask=False,
+        use_message_mask=False,
+        include_connection_feature=True,
+    )
+
+    h, init_h = encoder(td)
+    mask = pc_edge_mask(td, use_compat_mask=False, use_message_mask=False)
+
+    assert h.shape == init_h.shape == (2, 21, 64)
+    assert torch.isfinite(h).all()
+    assert mask.sum() >= td["assembly_adj"].bool().sum()
 
 
 def test_pc_edge_logits_change_when_edges_change():
