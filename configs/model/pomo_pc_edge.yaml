@@ -19,6 +19,7 @@ policy_kwargs:
     use_compat_mask: false
     use_message_mask: false
     include_connection_feature: true
+    aggregation: weighted
 
 metrics:
   train: ["loss", "reward", "max_reward"]

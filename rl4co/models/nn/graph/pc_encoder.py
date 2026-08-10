@@ -134,12 +134,24 @@ def pc_tensordict_to_edge_index(
 
 
 class PCEdgeMessagePassingLayer(nn.Module):
-    def __init__(self, embed_dim: int, dropout: float = 0.0):
+    def __init__(
+        self, embed_dim: int, dropout: float = 0.0, aggregation: str = "mean"
+    ):
         super().__init__()
+        if aggregation not in {"mean", "weighted"}:
+            raise ValueError(
+                f"Unknown aggregation '{aggregation}'. Expected 'mean' or 'weighted'."
+            )
+        self.aggregation = aggregation
         self.message = nn.Sequential(
             nn.Linear(3 * embed_dim, embed_dim),
             nn.ReLU(),
             nn.Linear(embed_dim, embed_dim),
+        )
+        self.weight_score = nn.Sequential(
+            nn.Linear(3 * embed_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, 1),
         )
         self.gate = nn.Linear(embed_dim, embed_dim)
         self.node_update = nn.Linear(embed_dim, embed_dim)
@@ -155,12 +167,23 @@ class PCEdgeMessagePassingLayer(nn.Module):
     def forward(self, h: Tensor, edge_h: Tensor, edge_mask: Tensor) -> Tensor:
         h_i = h.unsqueeze(-2).expand_as(edge_h)
         h_j = h.unsqueeze(-3).expand_as(edge_h)
-        msg = self.message(torch.cat([h_i, h_j, edge_h], dim=-1))
+        pair_h = torch.cat([h_i, h_j, edge_h], dim=-1)
+        msg = self.message(pair_h)
         msg = msg * torch.sigmoid(self.gate(edge_h))
         msg = msg * edge_mask.unsqueeze(-1).float()
 
-        degree = edge_mask.float().sum(dim=-1, keepdim=True).clamp_min(1.0)
-        agg = msg.sum(dim=-2) / degree
+        if self.aggregation == "weighted":
+            scores = self.weight_score(pair_h)
+            mask_value = torch.finfo(scores.dtype).min
+            scores = scores.masked_fill(~edge_mask.unsqueeze(-1), mask_value)
+            weights = torch.softmax(scores, dim=-2)
+            weights = weights * edge_mask.unsqueeze(-1).float()
+            weights = weights / weights.sum(dim=-2, keepdim=True).clamp_min(1e-9)
+            agg = (weights * msg).sum(dim=-2)
+        else:
+            degree = edge_mask.float().sum(dim=-1, keepdim=True).clamp_min(1.0)
+            agg = msg.sum(dim=-2) / degree
+
         h = self.norm1(h + self.dropout(self.node_update(agg)))
         h = self.norm2(h + self.dropout(self.ffn(h)))
         return h
@@ -193,6 +216,7 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
         use_message_mask: bool = True,
         include_connection_feature: bool = False,
         exclude_sep_from_encoder: bool = False,
+        aggregation: str = "mean",
     ):
         super().__init__()
         if isinstance(env_name, RL4COEnvBase):
@@ -210,7 +234,12 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
         self.exclude_sep_from_encoder = exclude_sep_from_encoder
         self.sep_embedding = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.layers = nn.ModuleList(
-            [PCEdgeMessagePassingLayer(embed_dim, dropout=dropout) for _ in range(num_layers)]
+            [
+                PCEdgeMessagePassingLayer(
+                    embed_dim, dropout=dropout, aggregation=aggregation
+                )
+                for _ in range(num_layers)
+            ]
         )
 
     def forward(self, td: TensorDict, mask: Tensor | None = None) -> tuple[Tensor, Tensor]:
