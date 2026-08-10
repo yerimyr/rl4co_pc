@@ -9,6 +9,7 @@ from torch import Tensor
 from rl4co.envs import RL4COEnvBase
 from rl4co.models.common.constructive import AutoregressiveEncoder
 from rl4co.models.nn.env_embeddings import env_init_embedding
+from rl4co.models.zoo.matnet.encoder import MatNetLayer
 
 
 def pc_dense_edge_features(td: TensorDict, include_connection: bool = False) -> Tensor:
@@ -273,4 +274,156 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
             sep_h = self.sep_embedding.expand(*h.shape[:-2], 1, h.size(-1))
             h = torch.cat([sep_h, h], dim=-2)
             init_h = torch.cat([sep_h, part_init_h], dim=-2)
+        return h, init_h
+
+
+class PCMatNetEncoder(AutoregressiveEncoder):
+    """MatNet-style PC encoder using pairwise PC relation matrices.
+
+    The wrapper converts PC tensors into MatNet row/column embeddings and a dense
+    relation matrix, then returns a single [B, N, D] embedding tensor so the
+    standard AttentionModel decoder can be reused.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int = 128,
+        num_layers: int = 3,
+        num_heads: int = 8,
+        env_name: str = "pc",
+        init_embedding: nn.Module | None = None,
+        edge_input_dim: int = 8,
+        feedforward_hidden: int = 512,
+        normalization: str = "batch",
+        include_connection_feature: bool = True,
+        use_message_mask: bool = False,
+        bias: bool = False,
+    ):
+        super().__init__()
+        if isinstance(env_name, RL4COEnvBase):
+            env_name = env_name.name
+        self.env_name = env_name
+        self.init_embedding = (
+            env_init_embedding(self.env_name, {"embed_dim": embed_dim})
+            if init_embedding is None
+            else init_embedding
+        )
+        self.row_projection = nn.Linear(embed_dim, embed_dim)
+        self.col_projection = nn.Linear(embed_dim, embed_dim)
+        self.relation_projection = nn.Sequential(
+            nn.Linear(edge_input_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, 1),
+        )
+        self.layers = nn.ModuleList(
+            [
+                MatNetLayer(
+                    embed_dim=embed_dim,
+                    num_heads=num_heads,
+                    bias=bias,
+                    feedforward_hidden=feedforward_hidden,
+                    normalization=normalization,
+                )
+                for _ in range(num_layers)
+            ]
+        )
+        self.output_projection = nn.Linear(2 * embed_dim, embed_dim)
+        self.include_connection_feature = include_connection_feature
+        self.use_message_mask = use_message_mask
+
+    def _encode_matnet(self, td: TensorDict) -> tuple[Tensor, Tensor, Tensor]:
+        init_h = self.init_embedding(td)
+        row_h = self.row_projection(init_h)
+        col_h = self.col_projection(init_h)
+        relation_features = pc_dense_edge_features(
+            td, include_connection=self.include_connection_feature
+        ).to(init_h.device)
+        relation_matrix = self.relation_projection(relation_features).squeeze(-1)
+        attn_mask = None
+        if self.use_message_mask:
+            attn_mask = pc_edge_mask(
+                td, use_compat_mask=False, use_message_mask=True
+            ).to(init_h.device)
+        for layer in self.layers:
+            row_h, col_h = layer(row_h, col_h, relation_matrix, attn_mask=attn_mask)
+        matnet_h = self.output_projection(torch.cat([row_h, col_h], dim=-1))
+        return matnet_h, init_h, relation_matrix
+
+    def forward(self, td: TensorDict, mask: Tensor | None = None) -> tuple[Tensor, Tensor]:
+        h, init_h, _ = self._encode_matnet(td)
+        return h, init_h
+
+
+class PCNodeFFNLayer(nn.Module):
+    def __init__(self, embed_dim: int, dropout: float = 0.0):
+        super().__init__()
+        self.ffn = nn.Sequential(
+            nn.Linear(embed_dim, 4 * embed_dim),
+            nn.ReLU(),
+            nn.Linear(4 * embed_dim, embed_dim),
+        )
+        self.norm = nn.LayerNorm(embed_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, h: Tensor) -> Tensor:
+        return self.norm(h + self.dropout(self.ffn(h)))
+
+
+class PCSplitHybridEncoder(AutoregressiveEncoder):
+    """Split PC encoder: node attributes via a node branch, pair relations via MatNet."""
+
+    def __init__(
+        self,
+        embed_dim: int = 128,
+        num_layers: int = 3,
+        num_heads: int = 8,
+        env_name: str = "pc",
+        init_embedding: nn.Module | None = None,
+        edge_input_dim: int = 8,
+        feedforward_hidden: int = 512,
+        normalization: str = "batch",
+        include_connection_feature: bool = True,
+        use_message_mask: bool = False,
+        dropout: float = 0.0,
+        bias: bool = False,
+    ):
+        super().__init__()
+        if isinstance(env_name, RL4COEnvBase):
+            env_name = env_name.name
+        self.env_name = env_name
+        self.init_embedding = (
+            env_init_embedding(self.env_name, {"embed_dim": embed_dim})
+            if init_embedding is None
+            else init_embedding
+        )
+        self.node_layers = nn.ModuleList(
+            [PCNodeFFNLayer(embed_dim, dropout=dropout) for _ in range(num_layers)]
+        )
+        self.matnet_encoder = PCMatNetEncoder(
+            embed_dim=embed_dim,
+            num_layers=num_layers,
+            num_heads=num_heads,
+            env_name=env_name,
+            init_embedding=self.init_embedding,
+            edge_input_dim=edge_input_dim,
+            feedforward_hidden=feedforward_hidden,
+            normalization=normalization,
+            include_connection_feature=include_connection_feature,
+            use_message_mask=use_message_mask,
+            bias=bias,
+        )
+        self.fusion = nn.Sequential(
+            nn.Linear(2 * embed_dim, embed_dim),
+            nn.ReLU(),
+            nn.Linear(embed_dim, embed_dim),
+        )
+        self.norm = nn.LayerNorm(embed_dim)
+
+    def forward(self, td: TensorDict, mask: Tensor | None = None) -> tuple[Tensor, Tensor]:
+        init_h = self.init_embedding(td)
+        node_h = init_h
+        for layer in self.node_layers:
+            node_h = layer(node_h)
+        matnet_h, _, _ = self.matnet_encoder._encode_matnet(td)
+        h = self.norm(node_h + self.fusion(torch.cat([node_h, matnet_h], dim=-1)))
         return h, init_h
