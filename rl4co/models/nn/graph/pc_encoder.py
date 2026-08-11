@@ -297,6 +297,7 @@ class PCMatNetEncoder(AutoregressiveEncoder):
         normalization: str = "batch",
         include_connection_feature: bool = True,
         use_message_mask: bool = False,
+        exclude_sep_from_encoder: bool = False,
         bias: bool = False,
     ):
         super().__init__()
@@ -330,23 +331,46 @@ class PCMatNetEncoder(AutoregressiveEncoder):
         self.output_projection = nn.Linear(2 * embed_dim, embed_dim)
         self.include_connection_feature = include_connection_feature
         self.use_message_mask = use_message_mask
+        self.exclude_sep_from_encoder = exclude_sep_from_encoder
+        self.sep_embedding = nn.Parameter(torch.zeros(1, 1, embed_dim))
 
     def _encode_matnet(self, td: TensorDict) -> tuple[Tensor, Tensor, Tensor]:
         init_h = self.init_embedding(td)
+        if self.exclude_sep_from_encoder:
+            part_init_h = init_h[..., 1:, :]
+        else:
+            part_init_h = None
+
         row_h = self.row_projection(init_h)
         col_h = self.col_projection(init_h)
         relation_features = pc_dense_edge_features(
             td, include_connection=self.include_connection_feature
         ).to(init_h.device)
+
+        if self.exclude_sep_from_encoder:
+            row_h = row_h[..., 1:, :]
+            col_h = col_h[..., 1:, :]
+            relation_features = relation_features[..., 1:, 1:, :]
+
         relation_matrix = self.relation_projection(relation_features).squeeze(-1)
         attn_mask = None
         if self.use_message_mask:
             attn_mask = pc_edge_mask(
                 td, use_compat_mask=False, use_message_mask=True
             ).to(init_h.device)
+            if self.exclude_sep_from_encoder:
+                attn_mask = attn_mask[..., 1:, 1:]
+
         for layer in self.layers:
             row_h, col_h = layer(row_h, col_h, relation_matrix, attn_mask=attn_mask)
         matnet_h = self.output_projection(torch.cat([row_h, col_h], dim=-1))
+
+        if self.exclude_sep_from_encoder:
+            sep_h = self.sep_embedding.expand(
+                *matnet_h.shape[:-2], 1, matnet_h.size(-1)
+            )
+            matnet_h = torch.cat([sep_h, matnet_h], dim=-2)
+            init_h = torch.cat([sep_h, part_init_h], dim=-2)
         return matnet_h, init_h, relation_matrix
 
     def forward(self, td: TensorDict, mask: Tensor | None = None) -> tuple[Tensor, Tensor]:

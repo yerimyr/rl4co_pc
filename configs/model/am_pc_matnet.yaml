@@ -15,4 +15,5 @@ policy_kwargs:
     edge_input_dim: 8
     include_connection_feature: true
     use_message_mask: false
+    exclude_sep_from_encoder: true
     normalization: batch
