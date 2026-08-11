@@ -14,6 +14,7 @@ policy_kwargs:
     use_message_mask: false
     include_connection_feature: true
     aggregation: weighted
+    exclude_sep_from_encoder: true
 
 critic_kwargs:
   embed_dim: ${model.policy_kwargs.embed_dim}

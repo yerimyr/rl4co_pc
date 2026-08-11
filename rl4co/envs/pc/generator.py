@@ -66,8 +66,7 @@ class FPIGenerator(Generator):
             "dense_clustered",
             "sparse_random",
         ]
-        # material one-hot + size(L/W/H) + maintenance + standard + SEP indicator
-        self.node_feat_dim = self.max_material_types + 3 + 1 + 1 + 1
+        self.node_feat_dim = self.max_material_types + 3 + 1 + 1
         self.edge_feat_dim = 1 + 3 + 1 + 1
 
     def _add_undirected_edge(self, adj: torch.Tensor, i: int, j: int) -> None:
@@ -232,7 +231,6 @@ class FPIGenerator(Generator):
         node_features = torch.zeros(
             (B, N + 1, self.node_feat_dim), dtype=torch.float32, device=device
         )
-        node_features[:, 0, -1] = 1.0
         W = torch.zeros((B, N + 1, N + 1), dtype=torch.float32, device=device)
         assembly_adj = torch.zeros((B, N + 1, N + 1), dtype=torch.bool, device=device)
         mat_var_all = torch.zeros((B, N + 1, N + 1), dtype=torch.float32, device=device)
@@ -303,7 +301,6 @@ class FPIGenerator(Generator):
                     size,
                     maintfreq.float().unsqueeze(-1),
                     isstandard.float().unsqueeze(-1),
-                    torch.zeros((n, 1), dtype=torch.float32, device=device),
                 ],
                 dim=-1,
             )
