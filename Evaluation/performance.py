@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from Evaluation.common import (
     DEFAULT_GENERATOR_PARAMS,
@@ -30,6 +33,16 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--num-parts", type=int, default=20)
+    parser.add_argument(
+        "--checkpoint-num-parts",
+        type=int,
+        default=None,
+        help=(
+            "Problem size used by the trained NCO checkpoints. Defaults to "
+            "--num-parts. Use --checkpoint-num-parts 20 with --num-parts 50 "
+            "for size generalization from n=20 to n=50."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=1234)
     parser.add_argument("--test-size", type=int, default=100)
     parser.add_argument("--limit", type=int, default=100)
@@ -58,12 +71,21 @@ def default_data_path(num_parts: int, seed: int) -> Path:
 def make_config(args: argparse.Namespace) -> dict[str, Any]:
     generator_params = dict(DEFAULT_GENERATOR_PARAMS)
     generator_params["num_parts"] = args.num_parts
-    output_dir = args.output_dir or (
-        OUTPUT_ROOT / "performance" / f"n{args.num_parts}_seed{args.seed}"
-    )
+    checkpoint_num_parts = args.checkpoint_num_parts or args.num_parts
+    if args.output_dir is not None:
+        output_dir = args.output_dir
+    elif checkpoint_num_parts == args.num_parts:
+        output_dir = OUTPUT_ROOT / "performance" / f"n{args.num_parts}_seed{args.seed}"
+    else:
+        output_dir = (
+            OUTPUT_ROOT
+            / "performance"
+            / f"train_n{checkpoint_num_parts}_test_n{args.num_parts}_seed{args.seed}"
+        )
     return {
         "name": "performance",
         "num_parts": args.num_parts,
+        "checkpoint_num_parts": checkpoint_num_parts,
         "test_size": args.test_size,
         "test_seed": args.seed,
         "limit": args.limit,
@@ -77,7 +99,7 @@ def make_config(args: argparse.Namespace) -> dict[str, Any]:
         "sa_iterations": args.sa_iterations,
         "cpccd_alpha": args.cpccd_alpha,
         "generator_params": generator_params,
-        "algorithms": algorithms_for_num_parts(args.num_parts),
+        "algorithms": algorithms_for_num_parts(checkpoint_num_parts),
         "output_dir": output_dir,
     }
 
@@ -176,7 +198,10 @@ def run(config: dict[str, Any]) -> pd.DataFrame:
         ga_generations=config["ga_generations"],
         sa_iterations=config["sa_iterations"],
         cpccd_alpha=config["cpccd_alpha"],
-        extra_columns={"num_parts_case": config["num_parts"]},
+        extra_columns={
+            "num_parts_case": config["num_parts"],
+            "checkpoint_num_parts": config["checkpoint_num_parts"],
+        },
     )
     df = add_bks_gap(df, group_cols=["repeat", "instance_idx"])
     save_dataframe(df, output_dir / "results_with_bks_gap.csv")
