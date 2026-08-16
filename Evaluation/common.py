@@ -143,6 +143,15 @@ N20_ALGORITHMS: list[AlgorithmSpec] = [
 ]
 
 
+def algorithms_for_num_parts(num_parts: int) -> list[AlgorithmSpec]:
+    nco_names = {f"nco_current_n{num_parts}", f"nco_matnet_n{num_parts}"}
+    return [
+        spec
+        for spec in DEFAULT_ALGORITHMS
+        if spec.kind == "baseline" or spec.name in nco_names
+    ]
+
+
 def active_algorithms(algorithms: list[AlgorithmSpec]) -> list[AlgorithmSpec]:
     active: list[AlgorithmSpec] = []
     for spec in algorithms:
@@ -301,6 +310,78 @@ def summarize_by_algorithm(
                 row[f"{metric}_median"] = values.median()
         rows.append(row)
     return pd.DataFrame(rows).sort_values(group_col)
+
+
+def save_metric_boxplots(
+    df: pd.DataFrame,
+    *,
+    metrics: list[str],
+    output_dir: Path,
+    group_col: str = "algorithm",
+    title_prefix: str = "",
+) -> None:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as exc:
+        print(f"Skip boxplots: {exc}")
+        return
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    groups = sorted(str(value) for value in df[group_col].dropna().unique())
+    if not groups:
+        print("Skip boxplots: no groups found.")
+        return
+
+    for metric in metrics:
+        if metric not in df.columns:
+            print(f"Skip boxplot for {metric}: column not found.")
+            continue
+
+        data = []
+        labels = []
+        for group in groups:
+            values = df.loc[df[group_col].astype(str) == group, metric].dropna().astype(float)
+            if len(values) == 0:
+                continue
+            data.append(values.to_numpy())
+            labels.append(group)
+
+        if not data:
+            print(f"Skip boxplot for {metric}: no numeric values.")
+            continue
+
+        fig_width = max(8.0, 1.6 * len(labels))
+        fig, ax = plt.subplots(figsize=(fig_width, 5.2))
+        boxplot = ax.boxplot(data, patch_artist=True, labels=labels, showfliers=True)
+        colors = ["#9ecae1", "#fdae6b", "#a1d99b", "#bcbddc", "#fdd0a2", "#c7e9c0"]
+        for patch, color in zip(boxplot["boxes"], colors * ((len(labels) // len(colors)) + 1)):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.85)
+
+        means = [float(np.mean(values)) for values in data]
+        ax.scatter(
+            range(1, len(labels) + 1),
+            means,
+            color="#d62728",
+            marker="D",
+            s=38,
+            label="Mean",
+            zorder=3,
+        )
+        title = f"{title_prefix} {metric} distribution".strip()
+        ax.set_title(title)
+        ax.set_xlabel(group_col)
+        ax.set_ylabel(metric)
+        ax.grid(True, axis="y", alpha=0.25)
+        ax.legend()
+        fig.tight_layout()
+        output_path = output_dir / f"{metric}_boxplot.png"
+        fig.savefig(output_path, dpi=180)
+        plt.close(fig)
+        print(f"Saved: {output_path}")
 
 
 def save_nonparametric_tests(

@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 
 from Evaluation.common import (
-    DEFAULT_ALGORITHMS,
     DEFAULT_GENERATOR_PARAMS,
+    N20_ALGORITHMS,
     OUTPUT_ROOT,
     add_bks_gap,
     dataset_path,
@@ -12,6 +12,7 @@ from Evaluation.common import (
     load_or_generate_dataset,
     save_dataframe,
     save_json,
+    save_metric_boxplots,
     save_nonparametric_tests,
     summarize_by_algorithm,
 )
@@ -42,7 +43,7 @@ CONFIG = {
     "limit": 100,
     "device": "cpu",
     "nco_batch_size": 100,
-    "ga_pop_size": 120,
+    "ga_pop_size": 100,
     "ga_generations": 3000,
     "sa_iterations": 3000,
     "cpccd_alpha": 0.5,
@@ -73,7 +74,7 @@ CONFIG = {
             "generator_params": dict(SHIFTED_DISTRIBUTION),
         },
     ],
-    "algorithms": DEFAULT_ALGORITHMS,
+    "algorithms": N20_ALGORITHMS,
 }
 
 
@@ -110,6 +111,12 @@ def run(config: dict = CONFIG):
         )
         df = add_bks_gap(df, group_cols=["generalization_case", "instance_idx"])
         save_dataframe(df, output_dir / f"results_with_bks_gap_{case_name}.csv")
+        save_metric_boxplots(
+            df,
+            metrics=["score", "bks_gap_pct", "wall_elapsed_sec"],
+            output_dir=output_dir / f"plots_{case_name}",
+            title_prefix=f"Generalization {case_name}",
+        )
         summary = summarize_by_algorithm(df, metrics=["score", "bks_gap_pct", "wall_elapsed_sec"])
         summary["generalization_case"] = case_name
         save_dataframe(summary, output_dir / f"summary_{case_name}.csv")
@@ -123,6 +130,13 @@ def run(config: dict = CONFIG):
 
     combined = pd.concat(all_frames, ignore_index=True)
     save_dataframe(combined, output_dir / "combined_results_with_bks_gap.csv")
+    save_metric_boxplots(
+        combined,
+        metrics=["score", "bks_gap_pct", "wall_elapsed_sec"],
+        output_dir=output_dir / "plots",
+        group_col="generalization_case",
+        title_prefix="Generalization by case",
+    )
     combined_summary = (
         combined.groupby(["generalization_case", "algorithm"])
         .agg(
