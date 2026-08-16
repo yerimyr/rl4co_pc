@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from Evaluation.common import (
-    DEFAULT_ALGORITHMS,
     DEFAULT_GENERATOR_PARAMS,
+    N20_ALGORITHMS,
     OUTPUT_ROOT,
     add_bks_gap,
     dataset_path,
@@ -20,18 +20,18 @@ from Evaluation.common import (
 CONFIG = {
     "name": "effectiveness",
     "num_parts": 20,
-    "test_size": 1000,
+    "test_size": 100,
     "test_seed": 1234,
     "overwrite_dataset": False,
-    "limit": 1000,
+    "limit": 100,
     "device": "cpu",
-    "nco_batch_size": 1000,
+    "nco_batch_size": 100,
     "ga_pop_size": 120,
     "ga_generations": 3000,
     "sa_iterations": 3000,
     "cpccd_alpha": 0.5,
     "generator_params": dict(DEFAULT_GENERATOR_PARAMS),
-    "algorithms": DEFAULT_ALGORITHMS,
+    "algorithms": N20_ALGORITHMS,
 }
 
 

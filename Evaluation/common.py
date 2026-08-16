@@ -55,9 +55,91 @@ DEFAULT_ALGORITHMS: list[AlgorithmSpec] = [
     AlgorithmSpec("cpccd", "baseline"),
     AlgorithmSpec("sa", "baseline"),
     AlgorithmSpec("ga", "baseline"),
-    # Fill these checkpoint paths in each experiment script before running.
-    AlgorithmSpec("nco_current", "nco", ckpt=None),
-    AlgorithmSpec("nco_matnet", "nco", ckpt=None),
+    AlgorithmSpec(
+        "nco_current_n10",
+        "nco",
+        ckpt=str(
+            ROOT
+            / "logs"
+            / "train"
+            / "runs"
+            / "2026-08-14_00-14-46"
+            / "checkpoints"
+            / "epoch_029.ckpt"
+        ),
+    ),
+    AlgorithmSpec(
+        "nco_matnet_n10",
+        "nco",
+        ckpt=str(
+            ROOT
+            / "logs"
+            / "train"
+            / "runs"
+            / "2026-08-14_01-50-10"
+            / "checkpoints"
+            / "epoch_004.ckpt"
+        ),
+    ),
+    AlgorithmSpec(
+        "nco_current_n20",
+        "nco",
+        ckpt=str(
+            ROOT
+            / "logs"
+            / "train"
+            / "runs"
+            / "2026-08-13_17-47-58"
+            / "checkpoints"
+            / "epoch_059.ckpt"
+        ),
+    ),
+    AlgorithmSpec(
+        "nco_matnet_n20",
+        "nco",
+        ckpt=str(
+            ROOT
+            / "logs"
+            / "train"
+            / "runs"
+            / "2026-08-13_21-03-29"
+            / "checkpoints"
+            / "epoch_004.ckpt"
+        ),
+    ),
+    AlgorithmSpec(
+        "nco_current_n50",
+        "nco",
+        ckpt=str(
+            ROOT
+            / "logs"
+            / "train"
+            / "runs"
+            / "2026-08-14_03-23-30"
+            / "checkpoints"
+            / "epoch_004.ckpt"
+        ),
+    ),
+    AlgorithmSpec(
+        "nco_matnet_n50",
+        "nco",
+        ckpt=str(
+            ROOT
+            / "logs"
+            / "train"
+            / "runs"
+            / "2026-08-14_20-37-28"
+            / "checkpoints"
+            / "epoch_004.ckpt"
+        ),
+    ),
+]
+
+
+N20_ALGORITHMS: list[AlgorithmSpec] = [
+    spec
+    for spec in DEFAULT_ALGORITHMS
+    if spec.kind == "baseline" or spec.name in {"nco_current_n20", "nco_matnet_n20"}
 ]
 
 

@@ -36,12 +36,12 @@ SHIFTED_DISTRIBUTION = {
 
 CONFIG = {
     "name": "generalization",
-    "test_size": 1000,
+    "test_size": 100,
     "test_seed": 1234,
     "overwrite_dataset": False,
-    "limit": 1000,
+    "limit": 100,
     "device": "cpu",
-    "nco_batch_size": 1000,
+    "nco_batch_size": 100,
     "ga_pop_size": 120,
     "ga_generations": 3000,
     "sa_iterations": 3000,
