@@ -50,10 +50,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--data", type=Path, default=None)
     parser.add_argument("--overwrite-dataset", action="store_true")
     parser.add_argument("--device", choices=["cpu", "cuda", "auto"], default="cpu")
-    parser.add_argument("--nco-batch-size", type=int, default=100)
+    parser.add_argument("--nco-batch-size", type=int, default=1)
     parser.add_argument("--ga-pop-size", type=int, default=100)
-    parser.add_argument("--ga-generations", type=int, default=3000)
-    parser.add_argument("--sa-iterations", type=int, default=3000)
+    parser.add_argument("--ga-generations", type=int, default=300)
+    parser.add_argument("--sa-iterations", type=int, default=300)
     parser.add_argument("--cpccd-alpha", type=float, default=0.5)
     parser.add_argument(
         "--output-dir",
