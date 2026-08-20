@@ -1,0 +1,12 @@
+_target_: rl4co.models.AttentionModel
+
+baseline: "rollout"
+
+policy_kwargs:
+  embed_dim: 128
+  num_encoder_layers: 3
+  num_heads: 8
+  init_embedding:
+    _target_: rl4co.models.nn.graph.tsp_edge_encoder.TSPEdgeListDistanceInitEmbedding
+    embed_dim: ${model.policy_kwargs.embed_dim}
+    aggregation: mean
