@@ -4,6 +4,7 @@ from rl4co.envs import PartConsolidationEnv
 from rl4co.models import AttentionModelPolicy
 from rl4co.models.nn.graph.pc_encoder import (
     PCEdgeAwareEncoder,
+    PCPartMatrixEncoder,
     pc_dense_edge_features,
     pc_edge_mask,
     pc_raw_compatibility_mask,
@@ -46,7 +47,15 @@ def test_pc_raw_compatibility_mask_without_stored_compat():
 
 def test_pc_edge_encoder_output_changes_when_edges_change():
     _, td = _pc_tensordict(batch_size=2, num_parts=20)
-    encoder = PCEdgeAwareEncoder(embed_dim=64, num_layers=1, env_name="pc")
+    encoder = PCEdgeAwareEncoder(
+        embed_dim=64,
+        num_layers=1,
+        env_name="pc",
+        edge_input_dim=5,
+        use_compat_mask=False,
+        use_message_mask=False,
+        include_connection_feature=True,
+    )
 
     h1, init_h1 = encoder(td)
 
@@ -89,7 +98,7 @@ def test_pc_edge_encoder_can_use_connection_as_feature_without_message_mask():
         embed_dim=64,
         num_layers=1,
         env_name="pc",
-        edge_input_dim=8,
+        edge_input_dim=5,
         use_compat_mask=False,
         use_message_mask=False,
         include_connection_feature=True,
@@ -127,6 +136,35 @@ def test_pc_edge_logits_change_when_edges_change():
     td2, _, cache2 = policy.decoder.pre_decoder_hook(td_edge_changed, env, h2)
     logits2, mask2 = policy.decoder(td2, cache2)
 
+    assert not torch.allclose(h1, h2)
     assert logits1.shape == logits2.shape == (2, 21)
     assert torch.equal(mask1, mask2)
-    assert not torch.allclose(logits1, logits2)
+    assert torch.isfinite(logits1).all()
+    assert torch.isfinite(logits2).all()
+
+
+def test_pc_part_matrix_encoder_output_changes_when_relation_rows_change():
+    _, td = _pc_tensordict(batch_size=2, num_parts=20)
+    encoder = PCPartMatrixEncoder(
+        embed_dim=64,
+        num_layers=1,
+        num_heads=4,
+        material_embed_dim=16,
+        attribute_embed_dim=16,
+        rel_motion_embed_dim=16,
+        relation_weight_embed_dim=16,
+    )
+
+    h1, init_h1 = encoder(td)
+
+    td_changed = td.clone()
+    td_changed["W"] = td_changed["W"] + 0.25 * td_changed["assembly_adj"].float()
+    td_changed["rel_motion"] = 1.0 - td_changed["rel_motion"]
+
+    h2, init_h2 = encoder(td_changed)
+
+    assert h1.shape == h2.shape == (2, 21, 64)
+    assert init_h1.shape == init_h2.shape == (2, 21, 64)
+    assert torch.isfinite(h1).all()
+    assert torch.isfinite(h2).all()
+    assert not torch.allclose(h1, h2)

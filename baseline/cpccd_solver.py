@@ -154,18 +154,18 @@ class CPCCDSolver:
     def _filter_intra_edges(self, inst, edges: list[tuple[int, int, float]]) -> list[tuple[int, int, float]]:
         survivors = []
         for u, v, weight in edges:
-            if self._pair_feasible(u, v, inst, include_size=True):
+            if self._pair_feasible(u, v, inst):
                 survivors.append((u, v, weight))
         return survivors
 
     def _filter_inter_edges(self, inst, edges: list[tuple[int, int, float]]) -> list[tuple[int, int, float]]:
         survivors = []
         for u, v, weight in edges:
-            if self._pair_feasible(u, v, inst, include_size=False):
+            if self._pair_feasible(u, v, inst):
                 survivors.append((u, v, weight))
         return survivors
 
-    def _pair_feasible(self, u: int, v: int, inst, include_size: bool) -> bool:
+    def _pair_feasible(self, u: int, v: int, inst) -> bool:
         pair = tuple(sorted((u, v)))
 
         if not self._node_feasible(u, inst):

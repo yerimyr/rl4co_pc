@@ -10,6 +10,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from Evaluation.common import (
+    AlgorithmSpec,
     DEFAULT_GENERATOR_PARAMS,
     OUTPUT_ROOT,
     ROOT,
@@ -56,6 +57,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sa-iterations", type=int, default=300)
     parser.add_argument("--cpccd-alpha", type=float, default=0.5)
     parser.add_argument(
+        "--nco-current-ckpt",
+        type=Path,
+        default=None,
+        help="Optional checkpoint override for nco-custom/current encoder.",
+    )
+    parser.add_argument(
+        "--nco-matnet-ckpt",
+        type=Path,
+        default=None,
+        help="Optional checkpoint override for nco-matnet.",
+    )
+    parser.add_argument(
+        "--nco-new-ckpt",
+        type=Path,
+        default=None,
+        help="Optional checkpoint override for nco-new/part-matrix encoder.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
@@ -66,6 +85,25 @@ def parse_args() -> argparse.Namespace:
 
 def default_data_path(num_parts: int, seed: int) -> Path:
     return ROOT / "data" / "pc" / f"pc{num_parts}_newdist_test_seed{seed}.npz"
+
+
+def apply_checkpoint_overrides(
+    algorithms: list[AlgorithmSpec],
+    checkpoint_num_parts: int,
+    args: argparse.Namespace,
+) -> list[AlgorithmSpec]:
+    overrides = {
+        f"nco_current_n{checkpoint_num_parts}": args.nco_current_ckpt,
+        f"nco_matnet_n{checkpoint_num_parts}": args.nco_matnet_ckpt,
+        f"nco_new_n{checkpoint_num_parts}": args.nco_new_ckpt,
+    }
+    out: list[AlgorithmSpec] = []
+    for spec in algorithms:
+        ckpt = overrides.get(spec.name)
+        out.append(
+            AlgorithmSpec(spec.name, spec.kind, str(ckpt) if ckpt is not None else spec.ckpt)
+        )
+    return out
 
 
 def make_config(args: argparse.Namespace) -> dict[str, Any]:
@@ -82,6 +120,9 @@ def make_config(args: argparse.Namespace) -> dict[str, Any]:
             / "performance"
             / f"train_n{checkpoint_num_parts}_test_n{args.num_parts}_seed{args.seed}"
         )
+    algorithms = apply_checkpoint_overrides(
+        algorithms_for_num_parts(checkpoint_num_parts), checkpoint_num_parts, args
+    )
     return {
         "name": "performance",
         "num_parts": args.num_parts,
@@ -99,7 +140,7 @@ def make_config(args: argparse.Namespace) -> dict[str, Any]:
         "sa_iterations": args.sa_iterations,
         "cpccd_alpha": args.cpccd_alpha,
         "generator_params": generator_params,
-        "algorithms": algorithms_for_num_parts(checkpoint_num_parts),
+        "algorithms": algorithms,
         "output_dir": output_dir,
     }
 

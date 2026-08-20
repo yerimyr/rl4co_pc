@@ -15,12 +15,6 @@ class FPIGeneratorParams:
     num_parts: int = 4
     max_num_parts: int | None = None
     material_types: int | None = None
-    L_low: float = 5.0
-    L_high: float = 100.0
-    W_low: float = 5.0
-    W_high: float = 100.0
-    H_low: float = 5.0
-    H_high: float = 100.0
     p_maint_H_low: float = 0.10
     p_maint_H_high: float = 0.50
     p_standard_low: float = 0.10
@@ -66,8 +60,8 @@ class FPIGenerator(Generator):
             "dense_clustered",
             "sparse_random",
         ]
-        self.node_feat_dim = self.max_material_types + 3 + 1 + 1
-        self.edge_feat_dim = 1 + 3 + 1 + 1
+        self.node_feat_dim = self.max_material_types + 1 + 1
+        self.edge_feat_dim = 1 + 1 + 1
 
     def _add_undirected_edge(self, adj: torch.Tensor, i: int, j: int) -> None:
         if i != j:
@@ -227,7 +221,6 @@ class FPIGenerator(Generator):
         material_all = torch.full((B, N + 1), -1, dtype=torch.long, device=device)
         maint_all = torch.full((B, N + 1), -1, dtype=torch.long, device=device)
         std_all = torch.full((B, N + 1), -1, dtype=torch.long, device=device)
-        size_all = torch.zeros((B, N + 1, 3), dtype=torch.float32, device=device)
         node_features = torch.zeros(
             (B, N + 1, self.node_feat_dim), dtype=torch.float32, device=device
         )
@@ -236,7 +229,6 @@ class FPIGenerator(Generator):
         mat_var_all = torch.zeros((B, N + 1, N + 1), dtype=torch.float32, device=device)
         maint_diff_all = torch.zeros((B, N + 1, N + 1), dtype=torch.float32, device=device)
         rel_motion_all = torch.zeros((B, N + 1, N + 1), dtype=torch.float32, device=device)
-        stack_all = torch.zeros((B, N + 1, N + 1, 3), dtype=torch.float32, device=device)
         edge_features = torch.zeros(
             (B, N + 1, N + 1, self.edge_feat_dim), dtype=torch.float32, device=device
         )
@@ -257,14 +249,6 @@ class FPIGenerator(Generator):
             instance_material_types = int(torch.randint(1, n + 1, (1,), device=device).item())
             material_type_count[b] = instance_material_types
             material = torch.randint(0, instance_material_types, (n,), device=device)
-            size = torch.stack(
-                [
-                    torch.rand((n,), device=device) * (self.p.L_high - self.p.L_low) + self.p.L_low,
-                    torch.rand((n,), device=device) * (self.p.W_high - self.p.W_low) + self.p.W_low,
-                    torch.rand((n,), device=device) * (self.p.H_high - self.p.H_low) + self.p.H_low,
-                ],
-                dim=-1,
-            ).float()
             p_maint_H = self._sample_probability_or_fixed(
                 self.p.p_maint_H,
                 self.p.p_maint_H_low, self.p.p_maint_H_high, device
@@ -285,20 +269,17 @@ class FPIGenerator(Generator):
             adj_parts = self._build_adjacency_from_topology(topo_id, n, device)
 
             mat_var = (material.unsqueeze(-1) != material.unsqueeze(-2)) & adj_parts
-            stack_size_full = size.unsqueeze(-2) + size.unsqueeze(-3)
             maint_diff = (maintfreq.unsqueeze(-1) != maintfreq.unsqueeze(-2)) & adj_parts
             rel = torch.rand((n, n), device=device) < p_relative_motion
             rel = (torch.triu(rel, diagonal=1) | torch.triu(rel, diagonal=1).transpose(-1, -2)) & ~eye
             rel_motion = rel & adj_parts
 
-            stack_size = stack_size_full * adj_parts.unsqueeze(-1).float()
             mat_oh = torch.nn.functional.one_hot(
                 material, num_classes=self.max_material_types
             ).float()
             part_node_features = torch.cat(
                 [
                     mat_oh,
-                    size,
                     maintfreq.float().unsqueeze(-1),
                     isstandard.float().unsqueeze(-1),
                 ],
@@ -307,7 +288,6 @@ class FPIGenerator(Generator):
             part_edge_features = torch.cat(
                 [
                     mat_var.float().unsqueeze(-1),
-                    stack_size,
                     maint_diff.float().unsqueeze(-1),
                     rel_motion.float().unsqueeze(-1),
                 ],
@@ -317,14 +297,12 @@ class FPIGenerator(Generator):
             material_all[b, 1 : n + 1] = material
             maint_all[b, 1 : n + 1] = maintfreq
             std_all[b, 1 : n + 1] = isstandard
-            size_all[b, 1 : n + 1, :] = size
             node_features[b, 1 : n + 1, :] = part_node_features
             W[b, 1 : n + 1, 1 : n + 1] = self._sample_embeddedness_weights(adj_parts)
             assembly_adj[b, 1 : n + 1, 1 : n + 1] = adj_parts
             mat_var_all[b, 1 : n + 1, 1 : n + 1] = mat_var.float()
             maint_diff_all[b, 1 : n + 1, 1 : n + 1] = maint_diff.float()
             rel_motion_all[b, 1 : n + 1, 1 : n + 1] = rel_motion.float()
-            stack_all[b, 1 : n + 1, 1 : n + 1, :] = stack_size.float()
             edge_features[b, 1 : n + 1, 1 : n + 1, :] = part_edge_features
             relation_valid[b, 1 : n + 1, 1 : n + 1] = adj_parts
 
@@ -337,13 +315,11 @@ class FPIGenerator(Generator):
                 "material_type_count": material_type_count,
                 "valid_part_mask": valid_part_mask,
                 "material": material_all,
-                "size": size_all,
                 "maintfreq": maint_all,
                 "isstandard": std_all,
                 "W": W,
                 "assembly_adj": assembly_adj,
                 "mat_var": mat_var_all,
-                "stack_size": stack_all,
                 "maint_diff": maint_diff_all,
                 "rel_motion": rel_motion_all,
                 "relation_valid": relation_valid,

@@ -11,7 +11,7 @@ policy_kwargs:
     embed_dim: ${model.policy_kwargs.embed_dim}
     num_layers: ${model.policy_kwargs.num_encoder_layers}
     env_name: pc
-    edge_input_dim: 8
+    edge_input_dim: 5
     use_compat_mask: false
     use_message_mask: false
     include_connection_feature: true

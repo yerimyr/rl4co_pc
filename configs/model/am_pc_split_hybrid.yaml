@@ -12,7 +12,7 @@ policy_kwargs:
     num_layers: ${model.policy_kwargs.num_encoder_layers}
     num_heads: ${model.policy_kwargs.num_heads}
     env_name: pc
-    edge_input_dim: 8
+    edge_input_dim: 5
     include_connection_feature: true
     use_message_mask: false
     normalization: batch

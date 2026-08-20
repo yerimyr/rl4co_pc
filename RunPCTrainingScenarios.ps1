@@ -1,5 +1,5 @@
 param(
-    [int[]] $NumParts = @(20, 10, 50),
+    [int[]] $NumParts = @(10, 20, 30),
     [switch] $GenerateData,
     [switch] $OverwriteData,
     [string] $Python = "python"
@@ -73,6 +73,16 @@ foreach ($n in $NumParts) {
             "experiment=pc/am_pc_matnet",
             "env.generator_params.num_parts=$n",
             "logger.tensorboard.name=reinforce_matnet_n$n"
+        )
+
+    Invoke-CheckedCommand `
+        -Label "Train part-matrix encoder, n=$n" `
+        -Command $Python `
+        -Arguments @(
+            "run.py",
+            "experiment=pc/am_pc_part_matrix",
+            "env.generator_params.num_parts=$n",
+            "logger.tensorboard.name=reinforce_part_matrix_n$n"
         )
 }
 

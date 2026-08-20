@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from tensordict import TensorDict
 from torch import Tensor
@@ -9,6 +10,7 @@ from torch import Tensor
 from rl4co.envs import RL4COEnvBase
 from rl4co.models.common.constructive import AutoregressiveEncoder
 from rl4co.models.nn.env_embeddings import env_init_embedding
+from rl4co.models.nn.graph.attnnet import GraphAttentionNetwork
 from rl4co.models.zoo.matnet.encoder import MatNetLayer
 
 
@@ -25,6 +27,8 @@ def pc_dense_edge_features(td: TensorDict, include_connection: bool = False) -> 
     edge_features = td["edge_features"].float()
     if edge_features.size(-1) == 7:
         edge_features = edge_features[..., 1:]
+    if edge_features.size(-1) == 6:
+        edge_features = edge_features[..., [0, 4, 5]]
 
     features = [edge_features]
     if "W" in td.keys():
@@ -211,7 +215,7 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
         num_layers: int = 3,
         env_name: str = "pc",
         init_embedding: nn.Module | None = None,
-        edge_input_dim: int = 7,
+        edge_input_dim: int = 4,
         dropout: float = 0.0,
         use_compat_mask: bool = True,
         use_message_mask: bool = True,
@@ -292,7 +296,7 @@ class PCMatNetEncoder(AutoregressiveEncoder):
         num_heads: int = 8,
         env_name: str = "pc",
         init_embedding: nn.Module | None = None,
-        edge_input_dim: int = 8,
+        edge_input_dim: int = 5,
         feedforward_hidden: int = 512,
         normalization: str = "batch",
         include_connection_feature: bool = True,
@@ -403,7 +407,7 @@ class PCSplitHybridEncoder(AutoregressiveEncoder):
         num_heads: int = 8,
         env_name: str = "pc",
         init_embedding: nn.Module | None = None,
-        edge_input_dim: int = 8,
+        edge_input_dim: int = 5,
         feedforward_hidden: int = 512,
         normalization: str = "batch",
         include_connection_feature: bool = True,
@@ -450,4 +454,162 @@ class PCSplitHybridEncoder(AutoregressiveEncoder):
             node_h = layer(node_h)
         matnet_h, _, _ = self.matnet_encoder._encode_matnet(td)
         h = self.norm(node_h + self.fusion(torch.cat([node_h, matnet_h], dim=-1)))
+        return h, init_h
+
+
+class PCPartMatrixEncoder(AutoregressiveEncoder):
+    """PC part-matrix encoder with separate feature-block embeddings.
+
+    This encoder converts each real part into one row-level feature vector:
+    material one-hot, scalar part attributes, relative-motion row vector, and
+    relation-weight row vector. Each block is embedded with its own parameters,
+    fused into a part embedding, processed by the standard AM graph-attention
+    encoder, and then concatenated with a learnable group-boundary token for the
+    decoder action-0 slot.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int = 128,
+        num_layers: int = 3,
+        num_heads: int = 8,
+        material_embed_dim: int = 32,
+        attribute_embed_dim: int = 32,
+        rel_motion_embed_dim: int = 32,
+        relation_weight_embed_dim: int = 32,
+        num_parts: int | None = None,
+        material_types: int | None = None,
+        material_vocab_size: int = 100,
+        feedforward_hidden: int = 512,
+        normalization: str = "batch",
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_parts = None if num_parts is None else int(num_parts)
+        self.material_feature_dim = int(material_types or material_vocab_size)
+
+        self.material_embedding = nn.Linear(self.material_feature_dim, material_embed_dim)
+        self.attribute_embedding = nn.Linear(2, attribute_embed_dim)
+        self.rel_motion_embedding = nn.Sequential(
+            nn.Linear(1, rel_motion_embed_dim),
+            nn.ReLU(),
+            nn.Linear(rel_motion_embed_dim, rel_motion_embed_dim),
+        )
+        self.rel_motion_score = nn.Sequential(
+            nn.Linear(1, rel_motion_embed_dim),
+            nn.ReLU(),
+            nn.Linear(rel_motion_embed_dim, 1),
+        )
+        self.relation_weight_embedding = nn.Sequential(
+            nn.Linear(1, relation_weight_embed_dim),
+            nn.ReLU(),
+            nn.Linear(relation_weight_embed_dim, relation_weight_embed_dim),
+        )
+        self.relation_weight_score = nn.Sequential(
+            nn.Linear(1, relation_weight_embed_dim),
+            nn.ReLU(),
+            nn.Linear(relation_weight_embed_dim, 1),
+        )
+
+        fused_dim = (
+            material_embed_dim
+            + attribute_embed_dim
+            + rel_motion_embed_dim
+            + relation_weight_embed_dim
+        )
+        self.part_fusion = nn.Sequential(
+            nn.Linear(fused_dim, embed_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim, embed_dim),
+        )
+        self.group_boundary_embedding = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.net = GraphAttentionNetwork(
+            num_heads=num_heads,
+            embed_dim=embed_dim,
+            num_layers=num_layers,
+            normalization=normalization,
+            feedforward_hidden=feedforward_hidden,
+        )
+
+    def _material_one_hot(self, td: TensorDict, n: int) -> Tensor:
+        if "material" in td.keys():
+            material = td["material"][..., 1 : n + 1].long().clamp_min(0)
+            material = material.clamp_max(self.material_feature_dim - 1)
+            return F.one_hot(material, num_classes=self.material_feature_dim).float()
+
+        node_features = td["node_features"][..., 1 : n + 1, :]
+        material = node_features[..., : self.material_feature_dim].float()
+        if material.size(-1) < self.material_feature_dim:
+            material = F.pad(material, (0, self.material_feature_dim - material.size(-1)))
+        return material
+
+    def _attribute_features(self, td: TensorDict, n: int, device: torch.device) -> Tensor:
+        features = []
+        if "maintfreq" in td.keys():
+            maint = td["maintfreq"][..., 1 : n + 1].float().to(device).unsqueeze(-1)
+        else:
+            maint = td["node_features"][..., 1 : n + 1, -2].float().to(device).unsqueeze(-1)
+        if "isstandard" in td.keys():
+            standard = td["isstandard"][..., 1 : n + 1].float().to(device).unsqueeze(-1)
+        else:
+            standard = td["node_features"][..., 1 : n + 1, -1].float().to(device).unsqueeze(-1)
+        features.extend([maint, standard])
+        return torch.cat(features, dim=-1)
+
+    def _valid_part_mask(self, td: TensorDict, n: int, device: torch.device) -> Tensor:
+        if "valid_part_mask" in td.keys():
+            return td["valid_part_mask"][..., 1 : n + 1].bool().to(device)
+        return torch.ones(*td.batch_size, n, dtype=torch.bool, device=device)
+
+    @staticmethod
+    def _row_relation_embedding(
+        values: Tensor,
+        valid: Tensor,
+        embedding: nn.Module,
+        score_net: nn.Module,
+    ) -> Tensor:
+        relation_values = values.unsqueeze(-1)
+        relation_h = embedding(relation_values)
+        scores = score_net(relation_values)
+        pair_valid = valid.unsqueeze(-1) & valid.unsqueeze(-2)
+        mask_value = torch.finfo(scores.dtype).min
+        scores = scores.masked_fill(~pair_valid.unsqueeze(-1), mask_value)
+        weights = torch.softmax(scores, dim=-2)
+        weights = weights * pair_valid.unsqueeze(-1).float()
+        weights = weights / weights.sum(dim=-2, keepdim=True).clamp_min(1e-9)
+        return (weights * relation_h).sum(dim=-2)
+
+    def forward(self, td: TensorDict, mask: Tensor | None = None) -> tuple[Tensor, Tensor]:
+        n = td["node_features"].size(-2) - 1
+        device = td["node_features"].device
+
+        material = self._material_one_hot(td, n).to(device)
+        attributes = self._attribute_features(td, n, device)
+        rel_motion = td["rel_motion"][..., 1 : n + 1, 1 : n + 1].float().to(device)
+        relation_weight = td["W"][..., 1 : n + 1, 1 : n + 1].float().to(device)
+        valid = self._valid_part_mask(td, n, device)
+
+        material_h = self.material_embedding(material)
+        attribute_h = self.attribute_embedding(attributes)
+        rel_motion_h = self._row_relation_embedding(
+            rel_motion, valid, self.rel_motion_embedding, self.rel_motion_score
+        )
+        relation_weight_h = self._row_relation_embedding(
+            relation_weight, valid, self.relation_weight_embedding, self.relation_weight_score
+        )
+
+        part_h = self.part_fusion(
+            torch.cat(
+                [material_h, attribute_h, rel_motion_h, relation_weight_h],
+                dim=-1,
+            )
+        )
+        part_h = part_h * valid.unsqueeze(-1).float()
+
+        part_encoded_h = self.net(part_h, mask=None)
+        boundary_h = self.group_boundary_embedding.expand(*part_h.shape[:-2], 1, part_h.size(-1))
+        init_h = torch.cat([boundary_h, part_h], dim=-2)
+        h = torch.cat([boundary_h, part_encoded_h], dim=-2)
         return h, init_h

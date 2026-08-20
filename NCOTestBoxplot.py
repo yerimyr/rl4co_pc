@@ -13,6 +13,23 @@ METHOD_LABELS = {
     "reinforce": "CONSTRUCTIVE_REINFORCE",
     "ppo": "CONSTRUCTIVE_PPO",
     "pomo": "CONSTRUCTIVE_POMO",
+    "original": "ORIGINAL",
+    "no_compatibility_matrix": "NO_COMPATIBILITY_MATRIX",
+    "no_action0": "NO_ACTION_0",
+    "no_encoder_masking": "NO_ENCODER_MASKING",
+    "all_removed": "ALL_REMOVED",
+    "reinforce_edge": "ORIGINAL",
+    "reinforce_edge_no_compat": "NO_COMPATIBILITY_MATRIX",
+    "reinforce_edge_no_sep_encoder": "NO_ACTION_0",
+    "reinforce_edge_no_message_mask": "NO_ENCODER_MASKING",
+    "reinforce_edge_all_removed": "ALL_REMOVED",
+    "ppo_edge_all_removed": "PPO_EDGE_ALL_REMOVED",
+    "pomo_edge_all_removed": "POMO_EDGE_ALL_REMOVED",
+    "reinforce_edge_no_compat_no_mask": "CURRENT_ENCODER",
+    "ppo_edge_no_compat_no_mask": "PPO_EDGE_NO_COMPAT_NO_MASK",
+    "pomo_edge_no_compat_no_mask": "POMO_EDGE_NO_COMPAT_NO_MASK",
+    "reinforce_matnet": "ONLY_MATNET",
+    "reinforce_split_hybrid": "CURRENT_ENCODER+MATNET",
 }
 
 
@@ -34,8 +51,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--methods",
         nargs="*",
-        default=["reinforce", "ppo", "pomo"],
+        default=[
+            "reinforce_edge",
+            "reinforce_edge_no_compat",
+            "reinforce_edge_no_message_mask",
+            "reinforce_edge_all_removed",
+        ],
         help="Methods to include in the plot.",
+    )
+    parser.add_argument(
+        "--aliases",
+        nargs="*",
+        default=None,
+        help="Optional algorithm names to assign to each --csv file in order.",
     )
     return parser.parse_args()
 
@@ -95,7 +123,8 @@ def save_boxplot(rows: list[dict], methods: list[str], output_path: Path) -> Non
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     labels = [METHOD_LABELS.get(method, method.upper()) for method in methods]
-    fig, ax = plt.subplots(figsize=(8.5, 5.5))
+    fig_width = max(8.5, 1.8 * len(methods))
+    fig, ax = plt.subplots(figsize=(fig_width, 5.5))
     try:
         boxplot = ax.boxplot(
             data,
@@ -119,7 +148,7 @@ def save_boxplot(rows: list[dict], methods: list[str], output_path: Path) -> Non
     ax.set_title("PC NCO Test Score Distribution")
     ax.set_xlabel("NCO model")
     ax.set_ylabel("Score")
-    ax.tick_params(axis="x", labelsize=8)
+    ax.tick_params(axis="x", labelsize=7)
     ax.grid(True, axis="y", alpha=0.25)
     ax.legend()
     fig.tight_layout()
@@ -148,10 +177,20 @@ def main() -> None:
         raise FileNotFoundError(f"No CSV files found. Pattern: {args.pattern}")
 
     rows: list[dict] = []
-    for path in csv_paths:
+    if args.aliases is not None and len(args.aliases) != len(csv_paths):
+        raise ValueError(
+            f"--aliases must have the same length as --csv files: "
+            f"{len(args.aliases)} aliases for {len(csv_paths)} files"
+        )
+
+    for idx, path in enumerate(csv_paths):
         if not path.exists():
             raise FileNotFoundError(f"CSV not found: {path}")
         file_rows = read_rows(path)
+        if args.aliases is not None:
+            alias = args.aliases[idx].lower()
+            for row in file_rows:
+                row["algorithm"] = alias
         rows.extend(file_rows)
         print(f"Loaded {len(file_rows):4d} rows from {path}")
 

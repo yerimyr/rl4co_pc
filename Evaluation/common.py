@@ -29,12 +29,6 @@ DEFAULT_GENERATOR_PARAMS: dict[str, Any] = {
     "max_num_parts": None,
     "material_types": None,
     "topology_mode": "mixed",
-    "L_low": 5.0,
-    "L_high": 100.0,
-    "W_low": 5.0,
-    "W_high": 100.0,
-    "H_low": 5.0,
-    "H_high": 100.0,
     "p_maint_H_low": 0.10,
     "p_maint_H_high": 0.50,
     "p_standard_low": 0.10,
@@ -55,96 +49,34 @@ DEFAULT_ALGORITHMS: list[AlgorithmSpec] = [
     AlgorithmSpec("cpccd", "baseline"),
     AlgorithmSpec("sa", "baseline"),
     AlgorithmSpec("ga", "baseline"),
-    AlgorithmSpec(
-        "nco_current_n10",
-        "nco",
-        ckpt=str(
-            ROOT
-            / "logs"
-            / "train"
-            / "runs"
-            / "2026-08-14_00-14-46"
-            / "checkpoints"
-            / "epoch_029.ckpt"
-        ),
-    ),
-    AlgorithmSpec(
-        "nco_matnet_n10",
-        "nco",
-        ckpt=str(
-            ROOT
-            / "logs"
-            / "train"
-            / "runs"
-            / "2026-08-14_01-50-10"
-            / "checkpoints"
-            / "epoch_004.ckpt"
-        ),
-    ),
-    AlgorithmSpec(
-        "nco_current_n20",
-        "nco",
-        ckpt=str(
-            ROOT
-            / "logs"
-            / "train"
-            / "runs"
-            / "2026-08-13_17-47-58"
-            / "checkpoints"
-            / "epoch_059.ckpt"
-        ),
-    ),
-    AlgorithmSpec(
-        "nco_matnet_n20",
-        "nco",
-        ckpt=str(
-            ROOT
-            / "logs"
-            / "train"
-            / "runs"
-            / "2026-08-13_21-03-29"
-            / "checkpoints"
-            / "epoch_004.ckpt"
-        ),
-    ),
-    AlgorithmSpec(
-        "nco_current_n50",
-        "nco",
-        ckpt=str(
-            ROOT
-            / "logs"
-            / "train"
-            / "runs"
-            / "2026-08-14_03-23-30"
-            / "checkpoints"
-            / "epoch_004.ckpt"
-        ),
-    ),
-    AlgorithmSpec(
-        "nco_matnet_n50",
-        "nco",
-        ckpt=str(
-            ROOT
-            / "logs"
-            / "train"
-            / "runs"
-            / "2026-08-14_20-37-28"
-            / "checkpoints"
-            / "epoch_004.ckpt"
-        ),
-    ),
+    AlgorithmSpec("nco_current_n10", "nco"),
+    AlgorithmSpec("nco_matnet_n10", "nco"),
+    AlgorithmSpec("nco_new_n10", "nco"),
+    AlgorithmSpec("nco_current_n20", "nco"),
+    AlgorithmSpec("nco_matnet_n20", "nco"),
+    AlgorithmSpec("nco_new_n20", "nco"),
+    AlgorithmSpec("nco_current_n30", "nco"),
+    AlgorithmSpec("nco_matnet_n30", "nco"),
+    AlgorithmSpec("nco_new_n30", "nco"),
+    AlgorithmSpec("nco_current_n50", "nco"),
+    AlgorithmSpec("nco_matnet_n50", "nco"),
+    AlgorithmSpec("nco_new_n50", "nco"),
 ]
 
 
 N20_ALGORITHMS: list[AlgorithmSpec] = [
     spec
     for spec in DEFAULT_ALGORITHMS
-    if spec.kind == "baseline" or spec.name in {"nco_current_n20", "nco_matnet_n20"}
+    if spec.kind == "baseline" or spec.name in {"nco_current_n20", "nco_matnet_n20", "nco_new_n20"}
 ]
 
 
 def algorithms_for_num_parts(num_parts: int) -> list[AlgorithmSpec]:
-    nco_names = {f"nco_current_n{num_parts}", f"nco_matnet_n{num_parts}"}
+    nco_names = {
+        f"nco_current_n{num_parts}",
+        f"nco_matnet_n{num_parts}",
+        f"nco_new_n{num_parts}",
+    }
     return [
         spec
         for spec in DEFAULT_ALGORITHMS

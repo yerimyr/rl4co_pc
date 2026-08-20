@@ -1,0 +1,20 @@
+_target_: rl4co.models.AttentionModel
+
+baseline: "rollout"
+
+policy_kwargs:
+  embed_dim: 128
+  num_encoder_layers: 3
+  num_heads: 8
+  encoder:
+    _target_: rl4co.models.nn.graph.pc_encoder.PCPartMatrixEncoder
+    embed_dim: ${model.policy_kwargs.embed_dim}
+    num_layers: ${model.policy_kwargs.num_encoder_layers}
+    num_heads: ${model.policy_kwargs.num_heads}
+    material_embed_dim: 32
+    attribute_embed_dim: 32
+    rel_motion_embed_dim: 32
+    relation_weight_embed_dim: 32
+    num_parts: ${env.generator_params.num_parts}
+    material_types: ${env.generator_params.material_types}
+    material_vocab_size: 100
