@@ -53,7 +53,24 @@ function Get-LatestCheckpoint {
         return (Resolve-Path $ExplicitPath).Path
     }
 
-    $matches = Get-ChildItem -Path $RunRoot -Directory -Filter $Pattern -ErrorAction SilentlyContinue |
+    $matches = Get-ChildItem -Path $RunRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object {
+            if ($_.Name -like $Pattern) {
+                return $true
+            }
+
+            $tensorboardDir = Join-Path $_.FullName "tensorboard"
+            if (Test-Path $tensorboardDir) {
+                $tbMatch = Get-ChildItem -Path $tensorboardDir -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -like $Pattern } |
+                    Select-Object -First 1
+                if ($tbMatch) {
+                    return $true
+                }
+            }
+
+            return $false
+        } |
         Sort-Object LastWriteTime -Descending
 
     foreach ($run in $matches) {
