@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import networkx as nx
 import numpy as np
 
+from rl4co.envs.pc.evaluator import relation_adjacency
+
 
 @dataclass
 class ConflictRecord:
@@ -85,7 +87,7 @@ class CPCCDSolver:
 
     def _build_weighted_graph(self, inst) -> nx.Graph:
         n = int(inst["num_parts"])
-        adj = np.asarray(inst["assembly_adj"])
+        adj = relation_adjacency(inst)
         w = np.asarray(inst["W"], dtype=float)
 
         graph = nx.Graph()
@@ -127,7 +129,7 @@ class CPCCDSolver:
         communities: list[list[int]],
         blocked_pairs: set[tuple[int, int]],
     ) -> tuple[list[tuple[int, int, float]], list[tuple[int, int, float]]]:
-        adj = np.asarray(inst["assembly_adj"])
+        adj = relation_adjacency(inst)
         w = np.asarray(inst["W"], dtype=float)
         community_of = {}
         for idx, comm in enumerate(communities):
@@ -195,7 +197,7 @@ class CPCCDSolver:
         return True
 
     def _connected(self, group: list[int], inst) -> bool:
-        adj = np.asarray(inst["assembly_adj"])
+        adj = relation_adjacency(inst)
         if not group:
             return True
 
@@ -279,7 +281,7 @@ class CPCCDSolver:
         edges = []
         for i in range(inst["num_parts"]):
             for j in range(i + 1, inst["num_parts"]):
-                if inst["assembly_adj"][i, j]:
+                if relation_adjacency(inst)[i, j]:
                     edges.append((float(w[i, j]), i, j))
         edges.sort(reverse=True)
 

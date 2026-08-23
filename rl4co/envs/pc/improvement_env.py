@@ -152,7 +152,7 @@ class PartConsolidationImprovementEnv(PartConsolidationEnv):
         pair_j = self._pair_j.to(device)
 
         valid = td["valid_part_mask"].bool()
-        assembly = td["assembly_adj"].bool()
+        assembly = self._relation_adj(td)
         pair_valid = valid[:, pair_i] & valid[:, pair_j] & assembly[:, pair_i, pair_j]
         reach = self.edge_bits_to_connectivity(edge_bits, td)
         same_group = reach[:, pair_i, pair_j]
@@ -231,7 +231,7 @@ class PartConsolidationImprovementEnv(PartConsolidationEnv):
         pair_i = self._pair_i.to(device)
         pair_j = self._pair_j.to(device)
         adj = torch.zeros((B, self.num_nodes, self.num_nodes), dtype=torch.bool, device=device)
-        valid_edge = edge_bits.bool() & td["assembly_adj"].bool()[:, pair_i, pair_j]
+        valid_edge = edge_bits.bool() & self._relation_adj(td)[:, pair_i, pair_j]
         adj[:, pair_i, pair_j] = valid_edge
         adj[:, pair_j, pair_i] = valid_edge
         return adj
@@ -304,7 +304,7 @@ class PartConsolidationImprovementEnv(PartConsolidationEnv):
         pair_valid = (
             td["valid_part_mask"].bool()[:, pair_i]
             & td["valid_part_mask"].bool()[:, pair_j]
-            & td["assembly_adj"].bool()[:, pair_i, pair_j]
+            & self._relation_adj(td)[:, pair_i, pair_j]
         )
         return reach[:, pair_i, pair_j] & pair_valid
 
@@ -318,7 +318,7 @@ class PartConsolidationImprovementEnv(PartConsolidationEnv):
             for gid, group in enumerate(groups_b):
                 for node in group:
                     group_id[int(node)] = gid
-            assembly = td["assembly_adj"][b].bool()
+            assembly = self._relation_adj(td)[b]
             for e, (u_t, v_t) in enumerate(zip(pair_i, pair_j)):
                 u, v = int(u_t.item()), int(v_t.item())
                 out[b, e] = (
@@ -342,7 +342,7 @@ class PartConsolidationImprovementEnv(PartConsolidationEnv):
                         td["mat_var"][b],
                         td["maint_diff"][b],
                         td["rel_motion"][b],
-                        td["assembly_adj"][b],
+                        self._relation_adj(td)[b],
                     ):
                         feasible_targets.append(idx)
                 if not feasible_targets or self._py_rng.random() < self.random_group_new_group_prob:
@@ -360,7 +360,7 @@ class PartConsolidationImprovementEnv(PartConsolidationEnv):
                 td["mat_var"][batch_idx],
                 td["maint_diff"][batch_idx],
                 td["rel_motion"][batch_idx],
-                td["assembly_adj"][batch_idx],
+                self._relation_adj(td)[batch_idx],
             )
             for group in groups
         )

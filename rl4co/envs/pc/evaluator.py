@@ -18,7 +18,7 @@ def node_feasible(node: int, inst) -> bool:
 def connected(group: list[int], inst) -> bool:
     if not group:
         return True
-    adj = np.asarray(inst["assembly_adj"])
+    adj = relation_adjacency(inst)
     visited = {group[0]}
     stack = [group[0]]
     while stack:
@@ -31,9 +31,10 @@ def connected(group: list[int], inst) -> bool:
 
 
 def no_pairwise_conflict(group: list[int], inst) -> bool:
-    mat_var = np.asarray(inst.get("mat_var", np.zeros_like(inst["assembly_adj"])))
-    maint_diff = np.asarray(inst.get("maint_diff", np.zeros_like(inst["assembly_adj"])))
-    rel_motion = np.asarray(inst.get("rel_motion", np.zeros_like(inst["assembly_adj"])))
+    shape = np.asarray(inst["W"]).shape
+    mat_var = np.asarray(inst.get("mat_var", np.zeros(shape, dtype=bool)))
+    maint_diff = np.asarray(inst.get("maint_diff", np.zeros(shape, dtype=bool)))
+    rel_motion = np.asarray(inst.get("rel_motion", np.zeros(shape, dtype=bool)))
     for i in range(len(group)):
         for j in range(i + 1, len(group)):
             a, b = group[i], group[j]
@@ -50,6 +51,18 @@ def group_feasible(group: list[int], inst) -> bool:
     if not no_pairwise_conflict(group, inst):
         return False
     return connected(group, inst)
+
+
+def relation_adjacency(inst) -> np.ndarray:
+    """Physical connectivity derived from relation weights.
+
+    Connected part pairs have positive W, while non-connected pairs have W=0.
+    Legacy ``assembly_adj`` is used only if W is unavailable.
+    """
+
+    if "W" in inst:
+        return np.asarray(inst["W"], dtype=float) > SCORE_EPS
+    return np.asarray(inst["assembly_adj"]).astype(bool)
 
 
 def internal_strength(group: list[int], inst) -> float:

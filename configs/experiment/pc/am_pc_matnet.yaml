@@ -12,7 +12,7 @@ model:
   batch_size: 1000
   val_batch_size: 1000
   test_batch_size: 1000
-  train_data_size: 5000
+  train_data_size: 10000
   val_data_size: 1000
   test_data_size: 1000
   optimizer_kwargs:
@@ -20,7 +20,7 @@ model:
     weight_decay: 1e-6
 
 trainer:
-  max_epochs: 30
+  max_epochs: 50
   enable_progress_bar: false
   enable_model_summary: false
 

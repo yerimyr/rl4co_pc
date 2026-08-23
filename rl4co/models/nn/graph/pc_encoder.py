@@ -18,8 +18,9 @@ def pc_dense_edge_features(td: TensorDict, include_connection: bool = False) -> 
     """Build dense PC edge features with shape [B, N, N, F].
 
     Edge attributes describe pair relations. The current edge embedding consumes
-    edge_features and W by default; ablations can additionally include the
-    connection matrix as a feature instead of using it as a hard mask.
+    edge_features and W by default; ablations can additionally include physical
+    connectivity as a feature. For new PC data, connectivity is derived from
+    W > 0 rather than stored as a separate adjacency matrix.
     Older PC datasets may still include assembly_adj as the first edge feature;
     that redundant channel is stripped here for backward compatibility.
     """
@@ -33,8 +34,13 @@ def pc_dense_edge_features(td: TensorDict, include_connection: bool = False) -> 
     features = [edge_features]
     if "W" in td.keys():
         features.append(td["W"].float().unsqueeze(-1))
-    if include_connection and "assembly_adj" in td.keys():
-        features.append(td["assembly_adj"].float().unsqueeze(-1))
+    if include_connection:
+        if "W" in td.keys():
+            features.append(td["W"].float().gt(1e-8).float().unsqueeze(-1))
+        elif "assembly_adj" in td.keys():
+            features.append(td["assembly_adj"].float().unsqueeze(-1))
+        elif "relation_valid" in td.keys():
+            features.append(td["relation_valid"].float().unsqueeze(-1))
     return torch.cat(features, dim=-1)
 
 
@@ -55,6 +61,8 @@ def pc_edge_mask(
     n = td["node_features"].size(-2)
     if not use_message_mask:
         mask = torch.ones(*td.batch_size, n, n, dtype=torch.bool, device=td.device)
+    elif "W" in td.keys():
+        mask = td["W"].float().gt(1e-8)
     elif "assembly_adj" in td.keys():
         mask = td["assembly_adj"].bool().clone()
     elif "relation_valid" in td.keys():
@@ -200,7 +208,7 @@ class PCEdgeAwareEncoder(AutoregressiveEncoder):
     Inputs:
         node_features: [B, N, F_node]
         edge_features/W: [B, N, N, ...]
-        assembly_adj: [B, N, N], used as the message passing mask
+        W: [B, N, N], used to derive the message passing mask when enabled
         compat: optional legacy mask. If missing, it is derived from raw
             constraints when use_compat_mask=True.
 
@@ -296,10 +304,10 @@ class PCMatNetEncoder(AutoregressiveEncoder):
         num_heads: int = 8,
         env_name: str = "pc",
         init_embedding: nn.Module | None = None,
-        edge_input_dim: int = 5,
+        edge_input_dim: int = 4,
         feedforward_hidden: int = 512,
         normalization: str = "batch",
-        include_connection_feature: bool = True,
+        include_connection_feature: bool = False,
         use_message_mask: bool = False,
         exclude_sep_from_encoder: bool = False,
         bias: bool = False,
@@ -407,10 +415,10 @@ class PCSplitHybridEncoder(AutoregressiveEncoder):
         num_heads: int = 8,
         env_name: str = "pc",
         init_embedding: nn.Module | None = None,
-        edge_input_dim: int = 5,
+        edge_input_dim: int = 4,
         feedforward_hidden: int = 512,
         normalization: str = "batch",
-        include_connection_feature: bool = True,
+        include_connection_feature: bool = False,
         use_message_mask: bool = False,
         dropout: float = 0.0,
         bias: bool = False,

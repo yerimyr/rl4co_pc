@@ -210,7 +210,7 @@ class FPIGenerator(Generator):
         sampled = (common_neighbors[edge_mask] + torch.rand_like(common_neighbors[edge_mask])) / float(
             max(n - 1, 1)
         )
-        weights[edge_mask] = sampled
+        weights[edge_mask] = sampled.clamp_min(1e-6)
         return weights + weights.transpose(0, 1)
 
     def _generate(self, batch_size) -> TensorDict:
@@ -225,14 +225,12 @@ class FPIGenerator(Generator):
             (B, N + 1, self.node_feat_dim), dtype=torch.float32, device=device
         )
         W = torch.zeros((B, N + 1, N + 1), dtype=torch.float32, device=device)
-        assembly_adj = torch.zeros((B, N + 1, N + 1), dtype=torch.bool, device=device)
         mat_var_all = torch.zeros((B, N + 1, N + 1), dtype=torch.float32, device=device)
         maint_diff_all = torch.zeros((B, N + 1, N + 1), dtype=torch.float32, device=device)
         rel_motion_all = torch.zeros((B, N + 1, N + 1), dtype=torch.float32, device=device)
         edge_features = torch.zeros(
             (B, N + 1, N + 1, self.edge_feat_dim), dtype=torch.float32, device=device
         )
-        relation_valid = torch.zeros((B, N + 1, N + 1), dtype=torch.bool, device=device)
         relation_consistent = torch.ones((B,), dtype=torch.bool, device=device)
         topology_id = torch.zeros((B,), dtype=torch.long, device=device)
         num_parts = torch.zeros((B,), dtype=torch.long, device=device)
@@ -299,12 +297,10 @@ class FPIGenerator(Generator):
             std_all[b, 1 : n + 1] = isstandard
             node_features[b, 1 : n + 1, :] = part_node_features
             W[b, 1 : n + 1, 1 : n + 1] = self._sample_embeddedness_weights(adj_parts)
-            assembly_adj[b, 1 : n + 1, 1 : n + 1] = adj_parts
             mat_var_all[b, 1 : n + 1, 1 : n + 1] = mat_var.float()
             maint_diff_all[b, 1 : n + 1, 1 : n + 1] = maint_diff.float()
             rel_motion_all[b, 1 : n + 1, 1 : n + 1] = rel_motion.float()
             edge_features[b, 1 : n + 1, 1 : n + 1, :] = part_edge_features
-            relation_valid[b, 1 : n + 1, 1 : n + 1] = adj_parts
 
         return TensorDict(
             {
@@ -318,11 +314,9 @@ class FPIGenerator(Generator):
                 "maintfreq": maint_all,
                 "isstandard": std_all,
                 "W": W,
-                "assembly_adj": assembly_adj,
                 "mat_var": mat_var_all,
                 "maint_diff": maint_diff_all,
                 "rel_motion": rel_motion_all,
-                "relation_valid": relation_valid,
                 "relation_consistent": relation_consistent,
             },
             batch_size=batch_size,

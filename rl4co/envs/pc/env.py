@@ -122,7 +122,7 @@ class PartConsolidationEnv(RL4COEnvBase):
         selected = td["selected"].bool()
         current_group = td["current_group_mask"].bool()
         valid = td["valid_part_mask"].bool()
-        assembly_adj = td["assembly_adj"].bool()
+        relation_adj = self._relation_adj(td)
         isstandard = td["isstandard"].bool()
         bad_pair = td["mat_var"].bool() | td["maint_diff"].bool() | td["rel_motion"].bool()
 
@@ -142,7 +142,7 @@ class PartConsolidationEnv(RL4COEnvBase):
         connected_to_group = (
             current_group[:, None, :, None]
             & candidate_eye[:, :, None, :]
-            & assembly_adj[:, None, :, :]
+            & relation_adj[:, None, :, :]
         ).any(dim=(-1, -2))
         connected_ok = ~group_nonempty[:, None] | connected_to_group
 
@@ -198,6 +198,22 @@ class PartConsolidationEnv(RL4COEnvBase):
         groups = self.actions_to_groups(actions, td)
         return self._terminal_reward_components(groups, td, actions.device)["Q_gamma"]
 
+    def _relation_adj(self, td: TensorDict) -> torch.Tensor:
+        """Derive physical relation adjacency from the relation weight matrix.
+
+        New PC instances store physical connectivity only through W: connected
+        pairs have positive relation weight and non-connected pairs have zero
+        weight. Legacy tensors are kept as a fallback for old datasets.
+        """
+
+        if "W" in td.keys():
+            return td["W"].float().gt(self._reward_eps)
+        if "assembly_adj" in td.keys():
+            return td["assembly_adj"].bool()
+        if "relation_valid" in td.keys():
+            return td["relation_valid"].bool()
+        raise KeyError("PC TensorDict requires W to derive relation adjacency")
+
     def reward_metrics_from_actions(
         self, actions: torch.Tensor, td: TensorDict
     ) -> dict[str, torch.Tensor]:
@@ -238,6 +254,7 @@ class PartConsolidationEnv(RL4COEnvBase):
         infeasible_groups = torch.zeros((B,), dtype=torch.float32, device=device)
         num_groups = torch.tensor([len(g) for g in groups], dtype=torch.float32, device=device)
         total_internal_strength = torch.zeros((B,), dtype=torch.float32, device=device)
+        relation_adj = self._relation_adj(td)
 
         for b, groups_b in enumerate(groups):
             infeasible = False
@@ -249,7 +266,7 @@ class PartConsolidationEnv(RL4COEnvBase):
                     td["mat_var"][b],
                     td["maint_diff"][b],
                     td["rel_motion"][b],
-                    td["assembly_adj"][b],
+                    relation_adj[b],
                 ):
                     infeasible = True
                     infeasible_groups[b] += 1.0
@@ -309,7 +326,7 @@ class PartConsolidationEnv(RL4COEnvBase):
         mat_var: torch.Tensor,
         maint_diff: torch.Tensor,
         rel_motion: torch.Tensor,
-        assembly_adj: torch.Tensor,
+        relation_adj: torch.Tensor,
     ) -> bool:
         if not group:
             return True
@@ -329,7 +346,7 @@ class PartConsolidationEnv(RL4COEnvBase):
         while stack:
             cur = stack.pop()
             for nxt in group:
-                if bool(assembly_adj[cur, nxt].item()) and nxt not in visited:
+                if bool(relation_adj[cur, nxt].item()) and nxt not in visited:
                     visited.add(nxt)
                     stack.append(nxt)
         return len(visited) == len(group)

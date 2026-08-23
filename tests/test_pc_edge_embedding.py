@@ -51,18 +51,17 @@ def test_pc_edge_encoder_output_changes_when_edges_change():
         embed_dim=64,
         num_layers=1,
         env_name="pc",
-        edge_input_dim=5,
+        edge_input_dim=4,
         use_compat_mask=False,
         use_message_mask=False,
-        include_connection_feature=True,
+        include_connection_feature=False,
     )
 
     h1, init_h1 = encoder(td)
 
     td_edge_changed = td.clone()
-    td_edge_changed["W"] = td_edge_changed["W"] + 0.25 * td_edge_changed[
-        "assembly_adj"
-    ].float()
+    relation_adj = td_edge_changed["W"].float().gt(1e-8)
+    td_edge_changed["W"] = td_edge_changed["W"] + 0.25 * relation_adj.float()
     td_edge_changed["edge_features"] = td_edge_changed["edge_features"].clone()
     td_edge_changed["edge_features"][..., 0] = 1.0 - td_edge_changed["edge_features"][..., 0]
 
@@ -106,10 +105,11 @@ def test_pc_edge_encoder_can_use_connection_as_feature_without_message_mask():
 
     h, init_h = encoder(td)
     mask = pc_edge_mask(td, use_compat_mask=False, use_message_mask=False)
+    relation_adj = td["W"].float().gt(1e-8)
 
     assert h.shape == init_h.shape == (2, 21, 64)
     assert torch.isfinite(h).all()
-    assert mask.sum() >= td["assembly_adj"].bool().sum()
+    assert mask.sum() >= relation_adj.sum()
 
 
 def test_pc_edge_logits_change_when_edges_change():
@@ -126,9 +126,8 @@ def test_pc_edge_logits_change_when_edges_change():
     logits1, mask1 = policy.decoder(td1, cache1)
 
     td_edge_changed = td.clone()
-    td_edge_changed["W"] = td_edge_changed["W"] + 0.25 * td_edge_changed[
-        "assembly_adj"
-    ].float()
+    relation_adj = td_edge_changed["W"].float().gt(1e-8)
+    td_edge_changed["W"] = td_edge_changed["W"] + 0.25 * relation_adj.float()
     td_edge_changed["edge_features"] = td_edge_changed["edge_features"].clone()
     td_edge_changed["edge_features"][..., 0] = 1.0 - td_edge_changed["edge_features"][..., 0]
 
@@ -158,7 +157,8 @@ def test_pc_part_matrix_encoder_output_changes_when_relation_rows_change():
     h1, init_h1 = encoder(td)
 
     td_changed = td.clone()
-    td_changed["W"] = td_changed["W"] + 0.25 * td_changed["assembly_adj"].float()
+    relation_adj = td_changed["W"].float().gt(1e-8)
+    td_changed["W"] = td_changed["W"] + 0.25 * relation_adj.float()
     td_changed["rel_motion"] = 1.0 - td_changed["rel_motion"]
 
     h2, init_h2 = encoder(td_changed)

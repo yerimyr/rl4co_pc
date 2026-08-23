@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 
-from rl4co.envs.pc.evaluator import evaluate_groups
+from rl4co.envs.pc.evaluator import evaluate_groups, relation_adjacency
 from rl4co.envs.pc.evaluator import score_metric_rows
 
 
@@ -84,7 +84,7 @@ class SASolver:
         return self._decode(best), time.time() - start
 
     def _build_edge_list(self, inst) -> list[tuple[int, int]]:
-        adj = np.asarray(inst["assembly_adj"]).astype(bool)
+        adj = relation_adjacency(inst)
         n = int(inst["num_parts"])
         return [(i, j) for i in range(n) for j in range(i + 1, n) if bool(adj[i, j])]
 
@@ -313,9 +313,10 @@ class SASolver:
         return True
 
     def _no_pairwise_conflict(self, group: list[int], inst) -> bool:
-        mat_var = np.asarray(inst.get("mat_var", np.zeros_like(inst["assembly_adj"])))
-        maint_diff = np.asarray(inst.get("maint_diff", np.zeros_like(inst["assembly_adj"])))
-        rel_motion = np.asarray(inst.get("rel_motion", np.zeros_like(inst["assembly_adj"])))
+        adj = relation_adjacency(inst)
+        mat_var = np.asarray(inst.get("mat_var", np.zeros_like(adj)))
+        maint_diff = np.asarray(inst.get("maint_diff", np.zeros_like(adj)))
+        rel_motion = np.asarray(inst.get("rel_motion", np.zeros_like(adj)))
         for i in range(len(group)):
             for j in range(i + 1, len(group)):
                 a, b = group[i], group[j]
@@ -326,7 +327,7 @@ class SASolver:
     def _connected(self, group: list[int], inst) -> bool:
         if not group:
             return True
-        adj = np.asarray(inst["assembly_adj"])
+        adj = relation_adjacency(inst)
         visited = {group[0]}
         stack = [group[0]]
         while stack:

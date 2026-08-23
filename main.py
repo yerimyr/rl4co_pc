@@ -155,6 +155,11 @@ def strip_sep_instance(td_item: Any) -> dict[str, Any]:
             else:
                 inst[key] = clean_value(value)
 
+    if "assembly_adj" not in inst and "W" in inst:
+        inst["assembly_adj"] = np.asarray(inst["W"], dtype=float) > 1e-8
+    if "relation_valid" not in inst and "W" in inst:
+        inst["relation_valid"] = np.asarray(inst["W"], dtype=float) > 1e-8
+
     return inst
 
 
