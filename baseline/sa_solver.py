@@ -21,7 +21,7 @@ class SASolver:
     def __init__(
         self,
         iterations: int = 10000,
-        initial_temperature: float = 1.0,
+        initial_temperature: float = 10.0,
         cooling_rate: float = 0.9985,
         min_temperature: float = 1e-4,
         init_new_group_bias: float = 0.60,

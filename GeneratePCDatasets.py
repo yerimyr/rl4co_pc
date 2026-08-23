@@ -52,6 +52,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--test-seed", type=int, default=1234)
     parser.add_argument("--output-dir", type=Path, default=Path("data/pc"))
     parser.add_argument(
+        "--material-types",
+        type=int,
+        default=None,
+        help=(
+            "Maximum material type count. If set to K, each instance samples "
+            "its material type count from 1..K. If omitted, each instance "
+            "samples from 1..num_parts."
+        ),
+    )
+    parser.add_argument(
         "--distribution",
         choices=["default", "shifted", "both"],
         default="default",
@@ -118,6 +128,9 @@ def main() -> None:
 
     for num_parts in args.num_parts:
         for suffix, params in distribution_items(args.distribution):
+            params = dict(params)
+            if args.material_types is not None:
+                params["material_types"] = args.material_types
             generate_file(
                 path=args.output_dir / f"pc{num_parts}_{suffix}_val_seed{args.val_seed}.npz",
                 num_parts=num_parts,

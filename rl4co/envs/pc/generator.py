@@ -244,7 +244,11 @@ class FPIGenerator(Generator):
             valid_part_mask[b, 1 : n + 1] = True
             eye = torch.eye(n, dtype=torch.bool, device=device)
 
-            instance_material_types = int(torch.randint(1, n + 1, (1,), device=device).item())
+            material_type_upper = self.max_material_types if self.p.material_types is not None else n
+            material_type_upper = max(1, int(material_type_upper))
+            instance_material_types = int(
+                torch.randint(1, material_type_upper + 1, (1,), device=device).item()
+            )
             material_type_count[b] = instance_material_types
             material = torch.randint(0, instance_material_types, (n,), device=device)
             p_maint_H = self._sample_probability_or_fixed(

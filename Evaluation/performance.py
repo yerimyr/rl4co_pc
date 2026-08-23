@@ -35,6 +35,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--num-parts", type=int, default=20)
     parser.add_argument(
+        "--material-types",
+        type=int,
+        default=None,
+        help=(
+            "Maximum material type count for generated evaluation data. "
+            "If omitted, each instance samples from 1..num_parts."
+        ),
+    )
+    parser.add_argument(
         "--checkpoint-num-parts",
         type=int,
         default=None,
@@ -109,6 +118,8 @@ def apply_checkpoint_overrides(
 def make_config(args: argparse.Namespace) -> dict[str, Any]:
     generator_params = dict(DEFAULT_GENERATOR_PARAMS)
     generator_params["num_parts"] = args.num_parts
+    if args.material_types is not None:
+        generator_params["material_types"] = args.material_types
     checkpoint_num_parts = args.checkpoint_num_parts or args.num_parts
     if args.output_dir is not None:
         output_dir = args.output_dir
