@@ -13,25 +13,25 @@ from rl4co.envs.pc.env import PartConsolidationEnv
 
 DEFAULT_PARAMS: dict[str, Any] = {
     "max_num_parts": None,
-    "material_types": None,
+    "material_types": 2,
     "topology_mode": "mixed",
-    "p_maint_H_low": 0.10,
-    "p_maint_H_high": 0.50,
-    "p_standard_low": 0.10,
-    "p_standard_high": 0.50,
-    "p_relative_motion_low": 0.10,
-    "p_relative_motion_high": 0.50,
+    "p_maint_H_low": 0.01,
+    "p_maint_H_high": 0.02,
+    "p_standard_low": 0.01,
+    "p_standard_high": 0.02,
+    "p_relative_motion_low": 0.01,
+    "p_relative_motion_high": 0.02,
 }
 
 
 SHIFTED_PARAMS: dict[str, Any] = {
     **DEFAULT_PARAMS,
-    "p_maint_H_low": 0.35,
-    "p_maint_H_high": 0.80,
-    "p_standard_low": 0.02,
-    "p_standard_high": 0.20,
-    "p_relative_motion_low": 0.35,
-    "p_relative_motion_high": 0.80,
+    "p_maint_H_low": 0.05,
+    "p_maint_H_high": 0.10,
+    "p_standard_low": 0.05,
+    "p_standard_high": 0.10,
+    "p_relative_motion_low": 0.05,
+    "p_relative_motion_high": 0.10,
 }
 
 

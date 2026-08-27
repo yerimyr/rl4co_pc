@@ -27,14 +27,14 @@ DATA_ROOT = ROOT / "data" / "pc" / "evaluation"
 DEFAULT_GENERATOR_PARAMS: dict[str, Any] = {
     "num_parts": 20,
     "max_num_parts": None,
-    "material_types": None,
+    "material_types": 2,
     "topology_mode": "mixed",
-    "p_maint_H_low": 0.10,
-    "p_maint_H_high": 0.50,
-    "p_standard_low": 0.10,
-    "p_standard_high": 0.50,
-    "p_relative_motion_low": 0.10,
-    "p_relative_motion_high": 0.50,
+    "p_maint_H_low": 0.01,
+    "p_maint_H_high": 0.02,
+    "p_standard_low": 0.01,
+    "p_standard_high": 0.02,
+    "p_relative_motion_low": 0.01,
+    "p_relative_motion_high": 0.02,
 }
 
 
