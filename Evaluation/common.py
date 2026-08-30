@@ -105,6 +105,8 @@ def make_main_args(
     ga_generations: int = 3000,
     sa_iterations: int = 3000,
     cpccd_alpha: float = 0.5,
+    plot_history: bool = False,
+    plot_dir: Path | None = None,
 ) -> argparse.Namespace:
     return argparse.Namespace(
         seed=seed,
@@ -118,8 +120,8 @@ def make_main_args(
         ga_generations=ga_generations,
         sa_iterations=sa_iterations,
         cpccd_alpha=cpccd_alpha,
-        plot_history=False,
-        plot_dir=OUTPUT_ROOT / "plots",
+        plot_history=plot_history,
+        plot_dir=plot_dir or (OUTPUT_ROOT / "plots"),
     )
 
 
@@ -161,6 +163,8 @@ def evaluate_specs(
     ga_generations: int = 3000,
     sa_iterations: int = 3000,
     cpccd_alpha: float = 0.5,
+    plot_history: bool = False,
+    plot_dir: Path | None = None,
     extra_columns: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
@@ -182,6 +186,8 @@ def evaluate_specs(
                 ga_generations=ga_generations,
                 sa_iterations=sa_iterations,
                 cpccd_alpha=cpccd_alpha,
+                plot_history=plot_history,
+                plot_dir=plot_dir,
             )
             started = time.perf_counter()
             if spec.kind == "nco":

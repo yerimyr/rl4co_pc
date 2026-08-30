@@ -66,6 +66,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sa-iterations", type=int, default=4000)
     parser.add_argument("--cpccd-alpha", type=float, default=0.5)
     parser.add_argument(
+        "--plot-history",
+        action="store_true",
+        help="Save per-instance GA/SA convergence plots under the output directory.",
+    )
+    parser.add_argument(
         "--nco-current-ckpt",
         type=Path,
         default=None,
@@ -150,6 +155,7 @@ def make_config(args: argparse.Namespace) -> dict[str, Any]:
         "ga_generations": args.ga_generations,
         "sa_iterations": args.sa_iterations,
         "cpccd_alpha": args.cpccd_alpha,
+        "plot_history": args.plot_history,
         "generator_params": generator_params,
         "algorithms": algorithms,
         "output_dir": output_dir,
@@ -250,6 +256,8 @@ def run(config: dict[str, Any]) -> pd.DataFrame:
         ga_generations=config["ga_generations"],
         sa_iterations=config["sa_iterations"],
         cpccd_alpha=config["cpccd_alpha"],
+        plot_history=config["plot_history"],
+        plot_dir=output_dir / "plots" / "history",
         extra_columns={
             "num_parts_case": config["num_parts"],
             "checkpoint_num_parts": config["checkpoint_num_parts"],
