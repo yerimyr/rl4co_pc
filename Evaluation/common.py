@@ -15,7 +15,7 @@ import torch
 from rl4co.data.utils import load_npz_to_tensordict, save_tensordict_to_npz
 from rl4co.envs.pc.env import PartConsolidationEnv
 
-from main import evaluate_algorithm, evaluate_nco, write_csv
+from main import evaluate_algorithm, evaluate_nco, strip_sep_instance, write_csv
 from StatisticalHypothesisTesting import run_friedman_and_posthoc
 
 
@@ -214,15 +214,96 @@ def add_bks_gap(
     *,
     group_cols: list[str] | None = None,
     score_col: str = "score",
-    eps: float = 1e-8,
 ) -> pd.DataFrame:
     group_cols = group_cols or ["instance_idx"]
     out = df.copy()
     out["bks_score"] = out.groupby(group_cols)[score_col].transform("max")
-    out["bks_gap_pct"] = (
-        (out["bks_score"] - out[score_col]) / (out["bks_score"].abs() + eps) * 100.0
-    )
+    out["bks_gap"] = out["bks_score"] - out[score_col]
     return out
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, torch.Tensor):
+        value = value.detach().cpu().numpy()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+def save_instance_plot(inst: dict[str, Any], path: Path, instance_idx: int) -> None:
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as exc:
+        print(f"Skip instance plot: {exc}")
+        return
+
+    matrices = [
+        ("Relation Weight W", np.asarray(inst.get("W", []), dtype=float)),
+        ("Material Difference", np.asarray(inst.get("mat_var", []), dtype=float)),
+        ("Maintenance Difference", np.asarray(inst.get("maint_diff", []), dtype=float)),
+        ("Relative Motion", np.asarray(inst.get("rel_motion", []), dtype=float)),
+    ]
+    matrices = [(title, mat) for title, mat in matrices if mat.ndim == 2 and mat.size > 0]
+    if not matrices:
+        return
+
+    cols = min(2, len(matrices))
+    rows = int(np.ceil(len(matrices) / cols))
+    fig, axes = plt.subplots(rows, cols, figsize=(5.0 * cols, 4.2 * rows))
+    axes_arr = np.atleast_1d(axes).reshape(-1)
+
+    for ax, (title, matrix) in zip(axes_arr, matrices):
+        image = ax.imshow(matrix, cmap="viridis", aspect="auto")
+        ax.set_title(title)
+        ax.set_xlabel("Part j")
+        ax.set_ylabel("Part i")
+        fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
+
+    for ax in axes_arr[len(matrices) :]:
+        ax.axis("off")
+
+    fig.suptitle(f"PC Instance {instance_idx:04d}")
+    fig.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def save_instance_artifacts(dataset, limit: int, output_dir: Path) -> None:
+    instance_dir = output_dir / "instances"
+    json_dir = instance_dir / "json"
+    plot_dir = instance_dir / "plots"
+    instance_dir.mkdir(parents=True, exist_ok=True)
+    json_dir.mkdir(parents=True, exist_ok=True)
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    actual_limit = min(int(limit), len(dataset))
+    try:
+        subset = dataset[:actual_limit]
+        if hasattr(subset, "cpu"):
+            subset = subset.cpu()
+        save_tensordict_to_npz(subset, instance_dir / "instances_used.npz")
+        print(f"Saved: {instance_dir / 'instances_used.npz'}")
+    except Exception as exc:
+        print(f"Skip instance npz export: {exc}")
+
+    for idx in range(actual_limit):
+        inst = strip_sep_instance(dataset[idx])
+        json_path = json_dir / f"instance_{idx:04d}.json"
+        with json_path.open("w", encoding="utf-8") as f:
+            json.dump(_json_safe(inst), f, indent=2, ensure_ascii=False)
+        save_instance_plot(inst, plot_dir / f"instance_{idx:04d}.png", idx)
+
+    print(f"Saved instance artifacts: {instance_dir}")
 
 
 def save_dataframe(df: pd.DataFrame, path: Path) -> None:

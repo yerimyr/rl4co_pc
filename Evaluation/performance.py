@@ -19,6 +19,7 @@ from Evaluation.common import (
     evaluate_specs,
     load_or_generate_dataset,
     save_dataframe,
+    save_instance_artifacts,
     save_json,
     save_metric_boxplots,
     save_nonparametric_tests,
@@ -65,6 +66,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ga-generations", type=int, default=3000)
     parser.add_argument("--sa-iterations", type=int, default=4000)
     parser.add_argument("--cpccd-alpha", type=float, default=0.5)
+    parser.add_argument(
+        "--algorithms",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated algorithms to run. Examples: "
+            "cpccd,sa,ga,nco-custom,nco-matnet,nco-new. "
+            "NCO aliases are resolved using --checkpoint-num-parts."
+        ),
+    )
     parser.add_argument(
         "--plot-history",
         action="store_true",
@@ -120,6 +131,40 @@ def apply_checkpoint_overrides(
     return out
 
 
+def filter_algorithms(
+    algorithms: list[AlgorithmSpec],
+    checkpoint_num_parts: int,
+    requested_csv: str | None,
+) -> list[AlgorithmSpec]:
+    if not requested_csv:
+        return algorithms
+
+    aliases = {
+        "nco": f"nco_current_n{checkpoint_num_parts}",
+        "nco-custom": f"nco_current_n{checkpoint_num_parts}",
+        "nco_custom": f"nco_current_n{checkpoint_num_parts}",
+        "nco-current": f"nco_current_n{checkpoint_num_parts}",
+        "nco_current": f"nco_current_n{checkpoint_num_parts}",
+        "nco-matnet": f"nco_matnet_n{checkpoint_num_parts}",
+        "nco_matnet": f"nco_matnet_n{checkpoint_num_parts}",
+        "matnet": f"nco_matnet_n{checkpoint_num_parts}",
+        "nco-new": f"nco_new_n{checkpoint_num_parts}",
+        "nco_new": f"nco_new_n{checkpoint_num_parts}",
+    }
+    requested = {
+        aliases.get(name.strip().lower(), name.strip())
+        for name in requested_csv.split(",")
+        if name.strip()
+    }
+    available = {spec.name for spec in algorithms}
+    unknown = sorted(requested - available)
+    if unknown:
+        raise ValueError(
+            f"Unknown algorithms: {unknown}. Available: {sorted(available)}"
+        )
+    return [spec for spec in algorithms if spec.name in requested]
+
+
 def make_config(args: argparse.Namespace) -> dict[str, Any]:
     generator_params = dict(DEFAULT_GENERATOR_PARAMS)
     generator_params["num_parts"] = args.num_parts
@@ -139,6 +184,7 @@ def make_config(args: argparse.Namespace) -> dict[str, Any]:
     algorithms = apply_checkpoint_overrides(
         algorithms_for_num_parts(checkpoint_num_parts), checkpoint_num_parts, args
     )
+    algorithms = filter_algorithms(algorithms, checkpoint_num_parts, args.algorithms)
     return {
         "name": "performance",
         "num_parts": args.num_parts,
@@ -168,8 +214,8 @@ def summarize_effectiveness(df: pd.DataFrame) -> pd.DataFrame:
         .agg(
             score_mean=("score", "mean"),
             score_std=("score", "std"),
-            bks_gap_pct_mean=("bks_gap_pct", "mean"),
-            bks_gap_pct_std=("bks_gap_pct", "std"),
+            bks_gap_mean=("bks_gap", "mean"),
+            bks_gap_std=("bks_gap", "std"),
             num_groups_mean=("num_groups", "mean"),
             feasible_mean=("feasible", "mean"),
             n=("score", "count"),
@@ -201,21 +247,21 @@ def summarize_stability(df: pd.DataFrame) -> pd.DataFrame:
         .agg(
             score_repeat_mean=("score", "mean"),
             score_repeat_std=("score", "std"),
-            bks_gap_pct_repeat_mean=("bks_gap_pct", "mean"),
-            bks_gap_pct_repeat_std=("bks_gap_pct", "std"),
+            bks_gap_repeat_mean=("bks_gap", "mean"),
+            bks_gap_repeat_std=("bks_gap", "std"),
         )
         .reset_index()
     )
-    per_instance[["score_repeat_std", "bks_gap_pct_repeat_std"]] = per_instance[
-        ["score_repeat_std", "bks_gap_pct_repeat_std"]
+    per_instance[["score_repeat_std", "bks_gap_repeat_std"]] = per_instance[
+        ["score_repeat_std", "bks_gap_repeat_std"]
     ].fillna(0.0)
     return (
         per_instance.groupby("algorithm")
         .agg(
             mean_score=("score_repeat_mean", "mean"),
-            mean_bks_gap_pct=("bks_gap_pct_repeat_mean", "mean"),
+            mean_bks_gap=("bks_gap_repeat_mean", "mean"),
             mean_within_instance_score_std=("score_repeat_std", "mean"),
-            mean_within_instance_gap_std=("bks_gap_pct_repeat_std", "mean"),
+            mean_within_instance_gap_std=("bks_gap_repeat_std", "mean"),
             n_instances=("instance_idx", "count"),
         )
         .reset_index()
@@ -242,6 +288,7 @@ def run(config: dict[str, Any]) -> pd.DataFrame:
         generator_params=config["generator_params"],
         overwrite=config["overwrite_dataset"],
     )
+    save_instance_artifacts(dataset, config["limit"], output_dir)
 
     df = evaluate_specs(
         dataset=dataset,
@@ -278,14 +325,14 @@ def run(config: dict[str, Any]) -> pd.DataFrame:
 
     save_metric_boxplots(
         df,
-        metrics=["score", "bks_gap_pct", "wall_elapsed_sec"],
+        metrics=["score", "bks_gap", "wall_elapsed_sec"],
         output_dir=output_dir / "plots",
         title_prefix=f"Performance n={config['num_parts']}",
     )
     save_nonparametric_tests(
         df,
         methods=sorted(df["algorithm"].unique()),
-        metrics=["score", "bks_gap_pct", "wall_elapsed_sec"],
+        metrics=["score", "bks_gap", "wall_elapsed_sec"],
         output_dir=output_dir / "stat_tests",
     )
     save_json(

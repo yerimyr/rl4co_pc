@@ -5,7 +5,7 @@ from collections import defaultdict
 import numpy as np
 
 SCORE_EPS = 1e-8
-DEFAULT_MODULARITY_GAMMA = 0.5  # 1.0
+DEFAULT_MODULARITY_GAMMA = 0.3  # 1.0
 DEFAULT_OBJECTIVE_SCALE = 1000.0
 
 
