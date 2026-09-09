@@ -85,7 +85,11 @@ def check_r3(groups: list[list[int]], inst) -> bool:
     return True
 
 
-def evaluate_groups(groups: list[list[int]], inst) -> dict[str, float]:
+def evaluate_groups(
+    groups: list[list[int]],
+    inst,
+    gamma: float = DEFAULT_MODULARITY_GAMMA,
+) -> dict[str, float]:
     infeasible_groups = 0
     total_internal_strength = 0.0
 
@@ -99,7 +103,7 @@ def evaluate_groups(groups: list[list[int]], inst) -> dict[str, float]:
     q_gamma, q_observed, q_expected = modularity_objective(
         groups,
         inst,
-        gamma=DEFAULT_MODULARITY_GAMMA,
+        gamma=gamma,
     )
     return {
         "feasible": float(1 - infeasible_solution),

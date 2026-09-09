@@ -59,7 +59,13 @@ class REINFORCE(RL4COLitModule):
     def shared_step(self, batch: Any, batch_idx: int, phase: str, dataloader_idx: int = None):
         td = self.env.reset(batch)
         # Perform forward pass (i.e., constructing solution and computing log-likelihoods)
-        out = self.policy(td, self.env, phase=phase, select_best=phase != "train")
+        out = self.policy(
+            td,
+            self.env,
+            phase=phase,
+            select_best=phase != "train",
+            return_entropy=phase == "train",
+        )
 
         # Compute loss
         if phase == "train":
@@ -67,6 +73,21 @@ class REINFORCE(RL4COLitModule):
 
         metrics = self.log_metrics(out, phase, dataloader_idx=dataloader_idx)
         step_out = {"loss": out.get("loss", None), **metrics}
+        if "log_likelihood" in out:
+            step_out["log_likelihood"] = out["log_likelihood"].detach()
+        if phase == "train" and "entropy" in out:
+            step_out["entropy"] = out["entropy"].detach()
+        if phase == "val" and "reward" in out:
+            sampling_batch = batch.clone() if hasattr(batch, "clone") else batch
+            sampling_td = self.env.reset(sampling_batch)
+            sampling_out = self.policy(
+                sampling_td,
+                self.env,
+                phase="train",
+                select_best=False,
+            )
+            if "reward" in sampling_out:
+                step_out["sampling_reward"] = sampling_out["reward"].detach()
         if phase == "test" and "reward" in out:
             step_out["_test_rewards"] = out["reward"].detach()
         return step_out

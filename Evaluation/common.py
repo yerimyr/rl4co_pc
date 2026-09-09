@@ -278,13 +278,144 @@ def save_instance_plot(inst: dict[str, Any], path: Path, instance_idx: int) -> N
     plt.close(fig)
 
 
+def _format_array(value: Any, *, precision: int = 3) -> str:
+    array = np.asarray(value)
+    if array.dtype.kind in {"b", "i", "u"}:
+        array = array.astype(int)
+    with np.printoptions(precision=precision, suppress=True, linewidth=220):
+        return np.array2string(array)
+
+
+def _compat_matrix(inst: dict[str, Any]) -> np.ndarray | None:
+    required = ("mat_var", "maint_diff", "rel_motion")
+    if not all(key in inst for key in required):
+        return None
+    mat_var = np.asarray(inst["mat_var"]).astype(bool)
+    maint_diff = np.asarray(inst["maint_diff"]).astype(bool)
+    rel_motion = np.asarray(inst["rel_motion"]).astype(bool)
+    return ~(mat_var | maint_diff | rel_motion)
+
+
+def _search_space_proxy(compat: np.ndarray | None) -> dict[str, Any]:
+    if compat is None or compat.ndim != 2:
+        return {}
+
+    comp = np.asarray(compat).astype(bool).copy()
+    n = int(comp.shape[0])
+    np.fill_diagonal(comp, False)
+    pairs = int(np.triu(comp, k=1).sum())
+    total_pairs = max(n * (n - 1) // 2, 1)
+
+    triples = 0
+    quads = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if not comp[i, j]:
+                continue
+            for k in range(j + 1, n):
+                if comp[i, k] and comp[j, k]:
+                    triples += 1
+                    for l in range(k + 1, n):
+                        if comp[i, l] and comp[j, l] and comp[k, l]:
+                            quads += 1
+
+    # Fast greedy proxy, not an exact maximum clique solver.
+    remaining = set(range(n))
+    clique: list[int] = []
+    degrees = comp.sum(axis=1)
+    while remaining:
+        node = max(remaining, key=lambda x: degrees[x])
+        if all(comp[node, other] for other in clique):
+            clique.append(node)
+            remaining = {other for other in remaining if comp[node, other]}
+        else:
+            remaining.remove(node)
+
+    return {
+        "compat_density": pairs / total_pairs,
+        "pairs": pairs,
+        "triples": triples,
+        "quads": quads,
+        "greedy_max_clique": len(clique),
+    }
+
+
+def save_instance_report(inst: dict[str, Any], path: Path, instance_idx: int) -> None:
+    compat = _compat_matrix(inst)
+    proxy = _search_space_proxy(compat)
+
+    lines = [
+        f"===== PC EXPERIMENT INSTANCE {instance_idx} =====",
+        "num_parts:",
+        str(inst.get("num_parts", "")),
+    ]
+
+    if proxy:
+        lines.extend(
+            [
+                "search_space_proxy:",
+                (
+                    f"compat_density={proxy['compat_density']:.3f}, "
+                    f"pairs={proxy['pairs']}, triples={proxy['triples']}, "
+                    f"quads={proxy['quads']}, greedy_max_clique={proxy['greedy_max_clique']}"
+                ),
+            ]
+        )
+
+    if "material_type_count" in inst:
+        lines.extend(["material_type_count:", str(inst["material_type_count"])])
+
+    for key, label in (
+        ("material", "material"),
+        ("maintfreq", "maintfreq"),
+        ("isstandard", "isstandard"),
+        ("assembly_adj", "assembly_adj"),
+        ("mat_var", "mat_var"),
+        ("maint_diff", "maint_diff"),
+        ("rel_motion", "rel_motion"),
+        ("W", "W"),
+    ):
+        if key in inst:
+            lines.extend([f"{label}:", _format_array(inst[key])])
+
+    if compat is not None:
+        lines.extend(["compat:", _format_array(compat.astype(int))])
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def save_instance_csvs(inst: dict[str, Any], csv_dir: Path) -> None:
+    csv_dir.mkdir(parents=True, exist_ok=True)
+
+    part_columns: dict[str, Any] = {"part_id": np.arange(1, int(inst["num_parts"]) + 1)}
+    for key in ("material", "maintfreq", "isstandard"):
+        if key in inst:
+            part_columns[key] = np.asarray(inst[key])
+    pd.DataFrame(part_columns).to_csv(csv_dir / "part_features.csv", index=False)
+
+    for key in ("assembly_adj", "mat_var", "maint_diff", "rel_motion", "W"):
+        if key in inst:
+            pd.DataFrame(np.asarray(inst[key])).to_csv(
+                csv_dir / f"{key}.csv", index=False, header=False
+            )
+
+    compat = _compat_matrix(inst)
+    if compat is not None:
+        pd.DataFrame(compat.astype(int)).to_csv(
+            csv_dir / "compat.csv", index=False, header=False
+        )
+
+
 def save_instance_artifacts(dataset, limit: int, output_dir: Path) -> None:
     instance_dir = output_dir / "instances"
     json_dir = instance_dir / "json"
-    plot_dir = instance_dir / "plots"
+    report_dir = instance_dir / "txt"
+    csv_dir = instance_dir / "csv"
     instance_dir.mkdir(parents=True, exist_ok=True)
     json_dir.mkdir(parents=True, exist_ok=True)
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    report_dir.mkdir(parents=True, exist_ok=True)
+    csv_dir.mkdir(parents=True, exist_ok=True)
 
     actual_limit = min(int(limit), len(dataset))
     try:
@@ -301,7 +432,8 @@ def save_instance_artifacts(dataset, limit: int, output_dir: Path) -> None:
         json_path = json_dir / f"instance_{idx:04d}.json"
         with json_path.open("w", encoding="utf-8") as f:
             json.dump(_json_safe(inst), f, indent=2, ensure_ascii=False)
-        save_instance_plot(inst, plot_dir / f"instance_{idx:04d}.png", idx)
+        save_instance_report(inst, report_dir / f"instance_{idx:04d}.txt", idx)
+        save_instance_csvs(inst, csv_dir / f"instance_{idx:04d}")
 
     print(f"Saved instance artifacts: {instance_dir}")
 

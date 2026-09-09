@@ -9,6 +9,8 @@ param(
     [int] $GaPopSize = 100,
     [int] $GaGenerations = 3000,
     [int] $SaIterations = 4000,
+    [string] $Algorithms = "cpccd,sa,nco-custom,nco-matnet,nco-new",
+    [string] $OutputSuffix = "",
     [string] $N10CurrentCkpt = "",
     [string] $N10MatNetCkpt = "",
     [string] $N10NewCkpt = "",
@@ -126,6 +128,7 @@ function Invoke-Performance {
             "--device", "$Device",
             "--data", $DataPath,
             "--output-dir", $OutputDir,
+            "--algorithms", $Algorithms,
             "--ga-pop-size", "$GaPopSize",
             "--ga-generations", "$GaGenerations",
             "--sa-iterations", "$SaIterations",
@@ -141,6 +144,8 @@ Write-Host "TestSize: $TestSize"
 Write-Host "Limit: $Limit"
 Write-Host "Repeats: $Repeats"
 Write-Host "Device: $Device"
+Write-Host "Algorithms: $Algorithms"
+Write-Host "OutputSuffix: $OutputSuffix"
 
 $ckpt10Current = Get-LatestCheckpoint -Pattern "*reinforce_edge_n10*" -ExplicitPath $N10CurrentCkpt
 $ckpt10MatNet = Get-LatestCheckpoint -Pattern "*reinforce_matnet_n10*" -ExplicitPath $N10MatNetCkpt
@@ -171,7 +176,7 @@ Invoke-Performance `
     -NumParts 10 `
     -CheckpointNumParts 10 `
     -DataPath "data\pc\pc10_newdist_test_seed${Seed}.npz" `
-    -OutputDir "outputs\evaluation\performance\n10_seed${Seed}" `
+    -OutputDir "outputs\evaluation\performance\n10_seed${Seed}${OutputSuffix}" `
     -CurrentCkpt $ckpt10Current `
     -MatNetCkpt $ckpt10MatNet `
     -NewCkpt $ckpt10New
@@ -181,7 +186,7 @@ Invoke-Performance `
     -NumParts 20 `
     -CheckpointNumParts 20 `
     -DataPath "data\pc\pc20_newdist_test_seed${Seed}.npz" `
-    -OutputDir "outputs\evaluation\performance\n20_seed${Seed}" `
+    -OutputDir "outputs\evaluation\performance\n20_seed${Seed}${OutputSuffix}" `
     -CurrentCkpt $ckpt20Current `
     -MatNetCkpt $ckpt20MatNet `
     -NewCkpt $ckpt20New
@@ -191,7 +196,7 @@ Invoke-Performance `
     -NumParts 30 `
     -CheckpointNumParts 30 `
     -DataPath "data\pc\pc30_newdist_test_seed${Seed}.npz" `
-    -OutputDir "outputs\evaluation\performance\n30_seed${Seed}" `
+    -OutputDir "outputs\evaluation\performance\n30_seed${Seed}${OutputSuffix}" `
     -CurrentCkpt $ckpt30Current `
     -MatNetCkpt $ckpt30MatNet `
     -NewCkpt $ckpt30New
@@ -201,7 +206,7 @@ Invoke-Performance `
     -NumParts 20 `
     -CheckpointNumParts 20 `
     -DataPath "data\pc\pc20_shifted_test_seed${Seed}.npz" `
-    -OutputDir "outputs\evaluation\performance\train_n20_test_n20_shifted_seed${Seed}" `
+    -OutputDir "outputs\evaluation\performance\train_n20_test_n20_shifted_seed${Seed}${OutputSuffix}" `
     -CurrentCkpt $ckpt20Current `
     -MatNetCkpt $ckpt20MatNet `
     -NewCkpt $ckpt20New
@@ -211,7 +216,7 @@ Invoke-Performance `
     -NumParts 30 `
     -CheckpointNumParts 20 `
     -DataPath "data\pc\pc30_newdist_test_seed${Seed}.npz" `
-    -OutputDir "outputs\evaluation\performance\train_n20_test_n30_seed${Seed}" `
+    -OutputDir "outputs\evaluation\performance\train_n20_test_n30_seed${Seed}${OutputSuffix}" `
     -CurrentCkpt $ckpt20Current `
     -MatNetCkpt $ckpt20MatNet `
     -NewCkpt $ckpt20New
@@ -221,7 +226,7 @@ Invoke-Performance `
     -NumParts 30 `
     -CheckpointNumParts 20 `
     -DataPath "data\pc\pc30_shifted_test_seed${Seed}.npz" `
-    -OutputDir "outputs\evaluation\performance\train_n20_test_n30_shifted_seed${Seed}" `
+    -OutputDir "outputs\evaluation\performance\train_n20_test_n30_shifted_seed${Seed}${OutputSuffix}" `
     -CurrentCkpt $ckpt20Current `
     -MatNetCkpt $ckpt20MatNet `
     -NewCkpt $ckpt20New

@@ -175,16 +175,25 @@ class TensorBoardLogger(Callback):
             return
         self._log_overfitting_scalars(
             trainer,
-            {"train_reward": train_values["reward"]},
+            {
+                "train_sampling_reward": train_values["reward"],
+                "train_reward": train_values["reward"],
+            },
             step,
         )
 
     def _log_overfitting_validation(self, trainer, val_values: dict[str, float], step: int) -> None:
         if "reward" not in val_values:
             return
+        scalars = {
+            "val_greedy_reward": val_values["reward"],
+            "validation_reward": val_values["reward"],
+        }
+        if "sampling_reward" in val_values:
+            scalars["val_sampling_reward"] = val_values["sampling_reward"]
         self._log_overfitting_scalars(
             trainer,
-            {"validation_reward": val_values["reward"]},
+            scalars,
             step,
         )
 

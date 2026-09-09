@@ -28,6 +28,7 @@ class PartConsolidationEnv(RL4COEnvBase):
         generator_params: dict = {},
         min_group_size_before_sep: int = 1,
         allow_fallback: bool = False,
+        modularity_gamma: float | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -41,7 +42,9 @@ class PartConsolidationEnv(RL4COEnvBase):
         self.node_feat_dim = self.generator.node_feat_dim
         self.edge_feat_dim = self.generator.edge_feat_dim
         self._reward_eps = 1e-8
-        self._modularity_gamma = DEFAULT_MODULARITY_GAMMA
+        self._modularity_gamma = (
+            DEFAULT_MODULARITY_GAMMA if modularity_gamma is None else float(modularity_gamma)
+        )
         self._objective_scale = DEFAULT_OBJECTIVE_SCALE
         self._make_spec(self.generator)
 
