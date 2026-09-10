@@ -428,6 +428,12 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
     save_dataframe(df, output_dir / "results_with_bks_gap.csv")
     save_dataframe(summarize(df), output_dir / "summary.csv")
     save_gamma_boxplot(df, output_dir / "plots")
+    from Evaluation.plot_optimal_attainment import prepare_attainment, save_plots
+
+    save_plots(
+        prepare_attainment(df),
+        output_dir / "plots" / "optimal_attainment",
+    )
     save_json(
         output_dir / "config.json",
         {
