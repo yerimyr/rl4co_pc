@@ -1,11 +1,12 @@
 """Plot CPCCD/NCO performance relative to the OR-Tools reference score.
 
-For positive OR-Tools scores, attainment is the usual score ratio.  The
-absolute value in the denominator keeps the direction meaningful when the
-reference score is negative::
+Attainment uses the original OR-Tools-relative formula::
 
     attainment (%) = 100 * (1 - (ortools_score - algorithm_score)
                                   / abs(ortools_score))
+
+When both scores are exactly zero, the algorithm ties the OR-Tools reference
+and attainment is defined as 100%.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ COLORS = {"cpccd": "#F28E2B", "nco-custom": "#59A14F"}
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create per-instance and mean OR-Tools attainment bar charts."
+        description="Create mean OR-Tools attainment bar charts."
     )
     parser.add_argument("raw_results", type=Path, help="Path to raw_results.csv")
     parser.add_argument(
@@ -54,13 +55,22 @@ def prepare_attainment(df: pd.DataFrame) -> pd.DataFrame:
     if result["ortools_score"].isna().any():
         bad = result.loc[result["ortools_score"].isna(), keys].drop_duplicates()
         raise ValueError(f"Missing OR-Tools reference rows:\n{bad.to_string(index=False)}")
-    if np.isclose(result["ortools_score"].to_numpy(dtype=float), 0.0).any():
-        raise ValueError("Cannot normalize an instance whose OR-Tools score is zero.")
-
-    result["attainment_pct"] = 100.0 * (
-        1.0
-        - (result["ortools_score"] - result["score"])
-        / result["ortools_score"].abs()
+    denominator = result["ortools_score"].abs()
+    degenerate = np.isclose(denominator.to_numpy(dtype=float), 0.0)
+    tied_at_bound = degenerate & np.isclose(
+        result["score"].to_numpy(dtype=float),
+        result["ortools_score"].to_numpy(dtype=float),
+    )
+    safe_denominator = denominator.mask(degenerate, 1.0)
+    result["attainment_pct"] = np.where(
+        tied_at_bound,
+        100.0,
+        np.where(
+            degenerate,
+            np.nan,
+            100.0
+            * (1.0 - (result["ortools_score"] - result["score"]) / safe_denominator),
+        ),
     )
     return result.sort_values(keys + ["method"]).reset_index(drop=True)
 
@@ -90,40 +100,6 @@ def save_plots(df: pd.DataFrame, output_dir: Path) -> None:
         gamma_dir = output_dir / f"gamma_{gamma_label}"
         gamma_dir.mkdir(parents=True, exist_ok=True)
 
-        for instance_idx, instance_df in gamma_df.groupby("instance_idx", sort=True):
-            instance_df = instance_df.set_index("method").reindex(METHODS).dropna(subset=["score"])
-            values = instance_df["attainment_pct"].to_numpy(dtype=float)
-            labels = [DISPLAY_NAMES[m] for m in instance_df.index]
-            colors = [COLORS[m] for m in instance_df.index]
-            ortools_score = float(instance_df["ortools_score"].iloc[0])
-            status = str(instance_df["ortools_status"].iloc[0])
-
-            fig, ax = plt.subplots(figsize=(5.4, 5.2))
-            bars = ax.bar(labels, values, color=colors, width=0.58)
-            _set_ratio_axis(ax, values)
-            ax.set_ylabel("OR-Tools attainment (%)")
-            ax.set_title(
-                f"Instance {int(instance_idx):02d} | gamma={float(gamma):g}\n"
-                f"OR-Tools score={ortools_score:.3f} ({status})"
-            )
-            ax.legend(loc="best", fontsize=8)
-            for bar, (_, row) in zip(bars, instance_df.iterrows()):
-                value = float(row["attainment_pct"])
-                offset = 3 if value >= 0 else -3
-                va = "bottom" if value >= 0 else "top"
-                ax.annotate(
-                    f"{value:.1f}%\nscore={float(row['score']):.3f}",
-                    (bar.get_x() + bar.get_width() / 2, value),
-                    xytext=(0, offset),
-                    textcoords="offset points",
-                    ha="center",
-                    va=va,
-                    fontsize=9,
-                )
-            fig.tight_layout()
-            fig.savefig(gamma_dir / f"instance_{int(instance_idx):02d}.png", dpi=180)
-            plt.close(fig)
-
         stats = (
             gamma_df.groupby("method")["attainment_pct"]
             .agg(["mean", "std", "var", "count"])
@@ -138,7 +114,11 @@ def save_plots(df: pd.DataFrame, output_dir: Path) -> None:
         bars = ax.bar(labels, means, color=colors, width=0.58, alpha=0.82)
         _set_ratio_axis(ax, means)
         ax.set_ylabel("Mean OR-Tools attainment (%)")
-        ax.set_title(f"Mean attainment over 30 instances | gamma={float(gamma):g}")
+        sample_sizes = sorted(stats["count"].astype(int).unique())
+        sample_label = str(sample_sizes[0]) if len(sample_sizes) == 1 else "/".join(map(str, sample_sizes))
+        ax.set_title(
+            f"Mean attainment | gamma={float(gamma):g} | valid n={sample_label}"
+        )
         ax.legend(loc="best", fontsize=8)
         for bar, (_, row) in zip(bars, stats.iterrows()):
             value = float(row["mean"])

@@ -367,6 +367,68 @@ def save_gamma_boxplot(df: pd.DataFrame, output_dir: Path) -> None:
     print(f"Saved: {output_path}")
 
 
+def save_gamma_score_barplot(df: pd.DataFrame, output_dir: Path) -> None:
+    """Save mean score bars with one-standard-deviation error bars."""
+    try:
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ModuleNotFoundError as exc:
+        print(f"Skip gamma score bar plot: {exc}")
+        return
+
+    method_order = ["ortools", "cpccd", "nco-custom"]
+    display_names = {"ortools": "OR-Tools", "cpccd": "CPCCD", "nco-custom": "NCO"}
+    colors = {"ortools": "#4C78A8", "cpccd": "#F28E2B", "nco-custom": "#59A14F"}
+    methods = [method for method in method_order if method in set(df["method"])]
+    gammas = sorted(float(gamma) for gamma in df["gamma"].dropna().unique())
+    summary = (
+        df.groupby(["gamma", "method"])["score"]
+        .agg(["mean", "std", "count"])
+        .reset_index()
+    )
+
+    x = np.arange(len(gammas), dtype=float)
+    total_width = 0.78
+    width = total_width / max(len(methods), 1)
+    fig, ax = plt.subplots(figsize=(max(9.0, 1.7 * len(gammas)), 6.0))
+
+    for method_idx, method in enumerate(methods):
+        method_summary = summary[summary["method"] == method].set_index("gamma")
+        means = np.array([method_summary.loc[gamma, "mean"] for gamma in gammas])
+        stds = np.array([method_summary.loc[gamma, "std"] for gamma in gammas])
+        offset = (method_idx - (len(methods) - 1) / 2) * width
+        ax.bar(
+            x + offset,
+            means,
+            width=width * 0.9,
+            yerr=stds,
+            capsize=4,
+            color=colors[method],
+            alpha=0.9,
+            label=display_names[method],
+            error_kw={"elinewidth": 1.3, "capthick": 1.3},
+        )
+
+    ax.axhline(0, color="black", linewidth=0.8)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{gamma:g}" for gamma in gammas])
+    ax.set_xlabel("Gamma")
+    ax.set_ylabel("Score")
+    ax.set_title("Mean score over test instances (error bars: ±1 SD)")
+    ax.grid(True, axis="y", alpha=0.25)
+    ax.legend(title="Method")
+    fig.tight_layout()
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / "gamma_score_barplot_mean_std.png"
+    fig.savefig(output_path, dpi=180)
+    plt.close(fig)
+    save_dataframe(summary.sort_values(["gamma", "method"]), output_dir / "gamma_score_barplot_summary.csv")
+    print(f"Saved: {output_path}")
+
+
 def run(args: argparse.Namespace) -> pd.DataFrame:
     gammas = parse_csv_floats(args.gammas)
     methods = parse_csv_methods(args.methods)
@@ -428,6 +490,7 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
     save_dataframe(df, output_dir / "results_with_bks_gap.csv")
     save_dataframe(summarize(df), output_dir / "summary.csv")
     save_gamma_boxplot(df, output_dir / "plots")
+    save_gamma_score_barplot(df, output_dir / "plots")
     from Evaluation.plot_optimal_attainment import prepare_attainment, save_plots
 
     save_plots(
