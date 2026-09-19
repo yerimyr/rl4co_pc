@@ -61,7 +61,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cpccd-alpha", type=float, default=0.5)
     parser.add_argument("--ortools-time-limit", type=float, default=30.0)
     parser.add_argument("--ortools-workers", type=int, default=8)
+    parser.add_argument(
+        "--ortools-result-name",
+        type=str,
+        default="ortools",
+        help="Method label stored for newly evaluated OR-Tools rows.",
+    )
     parser.add_argument("--allow-missing-nco", action="store_true")
+    parser.add_argument(
+        "--merge-existing",
+        action="store_true",
+        help=(
+            "Merge newly evaluated rows into an existing raw_results.csv in the "
+            "output directory. Rows with the same gamma, method, and instance_idx "
+            "are replaced; all other existing rows are preserved."
+        ),
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -129,6 +144,22 @@ def find_gamma_checkpoint(run_root: Path, num_parts: int, gamma: float) -> Path:
                 child.is_dir() and child.name.lower() == expected_lower
                 for child in tensorboard_dir.iterdir()
             )
+        if not matched:
+            overrides_path = run / ".hydra" / "overrides.yaml"
+            if overrides_path.exists():
+                override_num_parts = None
+                override_gamma = None
+                for line in overrides_path.read_text(encoding="utf-8").splitlines():
+                    value = line.removeprefix("- ").strip()
+                    if value.startswith("env.generator_params.num_parts="):
+                        override_num_parts = int(value.split("=", 1)[1])
+                    elif value.startswith("env.modularity_gamma="):
+                        override_gamma = float(value.split("=", 1)[1])
+                matched = (
+                    override_num_parts == num_parts
+                    and override_gamma is not None
+                    and np.isclose(override_gamma, gamma)
+                )
         if matched:
             matches.append(run)
 
@@ -201,6 +232,7 @@ def evaluate_ortools(
     gamma: float,
     time_limit_sec: float,
     workers: int,
+    result_name: str = "ortools",
 ) -> list[dict[str, Any]]:
     from baseline.ortools_pc_solver import ORToolsPCSolver
 
@@ -218,8 +250,8 @@ def evaluate_ortools(
         rows.append(
             {
                 "gamma": gamma,
-                "method": "ortools",
-                "algorithm": "ortools",
+                "method": result_name,
+                "algorithm": result_name,
                 "instance_idx": idx,
                 "score": float(metrics["score"]),
                 "solver_elapsed_sec": float(result.elapsed_sec),
@@ -317,10 +349,15 @@ def save_gamma_boxplot(df: pd.DataFrame, output_dir: Path) -> None:
         print(f"Skip gamma boxplot: {exc}")
         return
 
-    methods = ["ortools", "cpccd", "nco-custom"]
+    methods = ["ortools", "ortools-parallel", "cpccd", "nco-custom"]
     methods = [method for method in methods if method in set(df["method"])]
     gammas = sorted(float(gamma) for gamma in df["gamma"].dropna().unique())
-    colors = {"ortools": "#9ecae1", "cpccd": "#fdae6b", "nco-custom": "#a1d99b"}
+    colors = {
+        "ortools": "#9ecae1",
+        "ortools-parallel": "#3182bd",
+        "cpccd": "#fdae6b",
+        "nco-custom": "#a1d99b",
+    }
 
     fig, ax = plt.subplots(figsize=(max(10.0, 1.25 * len(gammas) * len(methods)), 6.0))
     positions = []
@@ -378,9 +415,19 @@ def save_gamma_score_barplot(df: pd.DataFrame, output_dir: Path) -> None:
         print(f"Skip gamma score bar plot: {exc}")
         return
 
-    method_order = ["ortools", "cpccd", "nco-custom"]
-    display_names = {"ortools": "OR-Tools", "cpccd": "CPCCD", "nco-custom": "NCO"}
-    colors = {"ortools": "#4C78A8", "cpccd": "#F28E2B", "nco-custom": "#59A14F"}
+    method_order = ["ortools", "ortools-parallel", "cpccd", "nco-custom"]
+    display_names = {
+        "ortools": "OR-Tools (serial)",
+        "ortools-parallel": "OR-Tools (10 workers)",
+        "cpccd": "CPCCD",
+        "nco-custom": "NCO",
+    }
+    colors = {
+        "ortools": "#9ECAE1",
+        "ortools-parallel": "#3182BD",
+        "cpccd": "#F28E2B",
+        "nco-custom": "#59A14F",
+    }
     methods = [method for method in method_order if method in set(df["method"])]
     gammas = sorted(float(gamma) for gamma in df["gamma"].dropna().unique())
     summary = (
@@ -457,6 +504,7 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
                     gamma,
                     args.ortools_time_limit,
                     args.ortools_workers,
+                    args.ortools_result_name,
                 )
             )
         if "cpccd" in methods:
@@ -485,7 +533,25 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
     if df.empty:
         raise ValueError("No rows were generated.")
 
-    save_dataframe(df, output_dir / "raw_results.csv")
+    raw_results_path = output_dir / "raw_results.csv"
+    if args.merge_existing and raw_results_path.exists():
+        existing = pd.read_csv(raw_results_path)
+        keys = ["gamma", "method", "instance_idx"]
+        replacement_keys = df[keys].drop_duplicates()
+        existing = existing.merge(
+            replacement_keys.assign(_replace=True),
+            on=keys,
+            how="left",
+        )
+        kept = existing.loc[existing["_replace"].isna()].drop(columns="_replace")
+        df = pd.concat([kept, df], ignore_index=True, sort=False)
+        df = df.sort_values(keys).reset_index(drop=True)
+        print(
+            f"Merged results: kept {len(kept)} existing rows and added/replaced "
+            f"{len(replacement_keys)} rows."
+        )
+
+    save_dataframe(df, raw_results_path)
     df = add_bks_gap(df, group_cols=["gamma", "instance_idx"])
     save_dataframe(df, output_dir / "results_with_bks_gap.csv")
     save_dataframe(summarize(df), output_dir / "summary.csv")
@@ -512,6 +578,8 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
             "cpccd_alpha": args.cpccd_alpha,
             "ortools_time_limit": args.ortools_time_limit,
             "ortools_workers": args.ortools_workers,
+            "ortools_result_name": args.ortools_result_name,
+            "merge_existing": args.merge_existing,
         },
     )
     return df

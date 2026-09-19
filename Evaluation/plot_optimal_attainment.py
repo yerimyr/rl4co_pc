@@ -44,8 +44,13 @@ def prepare_attainment(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Missing required columns: {sorted(missing)}")
 
     keys = ["gamma", "instance_idx"]
+    reference_method = (
+        "ortools-parallel"
+        if df["method"].eq("ortools-parallel").any()
+        else "ortools"
+    )
     reference = (
-        df.loc[df["method"].eq("ortools"), keys + ["score", "solver_status"]]
+        df.loc[df["method"].eq(reference_method), keys + ["score", "solver_status"]]
         .rename(columns={"score": "ortools_score", "solver_status": "ortools_status"})
         .drop_duplicates(keys)
     )
