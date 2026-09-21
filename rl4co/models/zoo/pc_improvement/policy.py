@@ -35,7 +35,10 @@ class PCImprovementPolicy(nn.Module):
         self.init_embedding = env_init_embedding("pc", {"embed_dim": embed_dim})
         self.group_embedding = nn.Embedding(512, embed_dim)
         layers = []
-        input_dim = 4 * embed_dim + 11
+        # Pair context: hi, hj, |hi-hj|, hi*hj (4 * embed_dim), current
+        # three-channel edge features, W, adjacency, compatibility and
+        # same-group indicator (7 scalar features total).
+        input_dim = 4 * embed_dim + 7
         for idx in range(num_layers):
             layers.append(nn.Linear(input_dim if idx == 0 else hidden_dim, hidden_dim))
             layers.append(nn.ReLU())
@@ -132,8 +135,26 @@ class PCImprovementPolicy(nn.Module):
         hj = h.index_select(1, pair_j)
         edge_features = td["edge_features"][:, pair_i, pair_j, :]
         w = td["W"][:, pair_i, pair_j].unsqueeze(-1)
-        assembly = td["assembly_adj"][:, pair_i, pair_j].float().unsqueeze(-1)
-        compat = td["compat"][:, pair_i, pair_j].float().unsqueeze(-1)
+        # Current PC datasets encode physical connectivity through positive W;
+        # assembly_adj is only present in legacy datasets.
+        if "assembly_adj" in td.keys():
+            assembly_matrix = td["assembly_adj"].bool()
+        else:
+            assembly_matrix = td["W"].float().gt(1e-8)
+        assembly = assembly_matrix[:, pair_i, pair_j].float().unsqueeze(-1)
+
+        # Likewise, compatibility is represented by the three pairwise
+        # conflict matrices in current datasets. Keep the old key as a
+        # backwards-compatible fast path.
+        if "compat" in td.keys():
+            compat_matrix = td["compat"].bool()
+        else:
+            compat_matrix = ~(
+                td["mat_var"].bool()
+                | td["maint_diff"].bool()
+                | td["rel_motion"].bool()
+            )
+        compat = compat_matrix[:, pair_i, pair_j].float().unsqueeze(-1)
         same_group = (
             td["group_id"][:, pair_i].eq(td["group_id"][:, pair_j])
             & td["group_id"][:, pair_i].ge(0)

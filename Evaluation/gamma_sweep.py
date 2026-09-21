@@ -258,6 +258,9 @@ def evaluate_ortools(
                 "wall_elapsed_sec": float(result.elapsed_sec),
                 "groups": json.dumps(result.groups),
                 "solver_status": result.status,
+                "solver_has_solution": result.status in {"OPTIMAL", "FEASIBLE"},
+                "ortools_time_limit_sec": float(time_limit_sec),
+                "ortools_workers": int(workers),
                 "ortools_objective_value": result.objective_value,
                 "ortools_best_objective_bound": result.best_objective_bound,
                 **{key: value for key, value in metrics.items()},
@@ -552,15 +555,25 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
         )
 
     save_dataframe(df, raw_results_path)
-    df = add_bks_gap(df, group_cols=["gamma", "instance_idx"])
-    save_dataframe(df, output_dir / "results_with_bks_gap.csv")
-    save_dataframe(summarize(df), output_dir / "summary.csv")
-    save_gamma_boxplot(df, output_dir / "plots")
-    save_gamma_score_barplot(df, output_dir / "plots")
+    invalid_ortools = (
+        df["method"].astype(str).str.startswith("ortools")
+        & ~df["solver_status"].isin(["OPTIMAL", "FEASIBLE"])
+    )
+    if invalid_ortools.any():
+        print(
+            f"Exclude {int(invalid_ortools.sum())} OR-Tools rows without a solver "
+            "solution from summaries and plots. They remain in raw_results.csv."
+        )
+    analysis_df = df.loc[~invalid_ortools].copy()
+    analysis_df = add_bks_gap(analysis_df, group_cols=["gamma", "instance_idx"])
+    save_dataframe(analysis_df, output_dir / "results_with_bks_gap.csv")
+    save_dataframe(summarize(analysis_df), output_dir / "summary.csv")
+    save_gamma_boxplot(analysis_df, output_dir / "plots")
+    save_gamma_score_barplot(analysis_df, output_dir / "plots")
     from Evaluation.plot_optimal_attainment import prepare_attainment, save_plots
 
     save_plots(
-        prepare_attainment(df),
+        prepare_attainment(analysis_df),
         output_dir / "plots" / "optimal_attainment",
     )
     save_json(
@@ -570,8 +583,11 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
             "seed": args.seed,
             "limit": limit,
             "data": str(data_path),
-            "gammas": gammas,
-            "methods": methods,
+            # Describe the complete merged artifact, not only this invocation.
+            "gammas": sorted(float(value) for value in df["gamma"].dropna().unique()),
+            "methods": sorted(str(value) for value in df["method"].dropna().unique()),
+            "last_invocation_gammas": gammas,
+            "last_invocation_methods": methods,
             "run_root": str(args.run_root),
             "device": args.device,
             "nco_batch_size": args.nco_batch_size,

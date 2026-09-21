@@ -1,4 +1,4 @@
-"""Plot CPCCD/NCO performance relative to the OR-Tools reference score.
+"""Plot CPCCD/NCO performance relative to the best available OR-Tools score.
 
 Attainment uses the original OR-Tools-relative formula::
 
@@ -44,15 +44,21 @@ def prepare_attainment(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError(f"Missing required columns: {sorted(missing)}")
 
     keys = ["gamma", "instance_idx"]
-    reference_method = (
-        "ortools-parallel"
-        if df["method"].eq("ortools-parallel").any()
-        else "ortools"
-    )
+    reference_candidates = df.loc[
+        df["method"].astype(str).str.startswith("ortools")
+        & df["solver_status"].isin(["OPTIMAL", "FEASIBLE"]),
+        keys + ["method", "score", "solver_status"],
+    ]
     reference = (
-        df.loc[df["method"].eq(reference_method), keys + ["score", "solver_status"]]
-        .rename(columns={"score": "ortools_score", "solver_status": "ortools_status"})
+        reference_candidates.sort_values("score", ascending=False)
         .drop_duplicates(keys)
+        .rename(
+            columns={
+                "method": "ortools_method",
+                "score": "ortools_score",
+                "solver_status": "ortools_status",
+            }
+        )
     )
     algorithms = df.loc[df["method"].isin(METHODS), keys + ["method", "score"]]
     result = algorithms.merge(reference, on=keys, how="left", validate="many_to_one")
@@ -86,7 +92,13 @@ def _set_ratio_axis(ax, values: np.ndarray) -> None:
     high = max(100.0, float(finite.max()) if finite.size else 100.0)
     padding = max(6.0, 0.08 * (high - low or 100.0))
     ax.set_ylim(low - padding, high + padding)
-    ax.axhline(100.0, color="#4E79A7", linewidth=1.5, linestyle="--", label="OR-Tools (100%)")
+    ax.axhline(
+        100.0,
+        color="#4E79A7",
+        linewidth=1.5,
+        linestyle="--",
+        label="Best available OR-Tools reference (100%)",
+    )
     ax.axhline(0.0, color="#555555", linewidth=0.8)
     ax.grid(axis="y", alpha=0.25)
 
@@ -118,7 +130,7 @@ def save_plots(df: pd.DataFrame, output_dir: Path) -> None:
         fig, ax = plt.subplots(figsize=(6.4, 6.2))
         bars = ax.bar(labels, means, color=colors, width=0.58, alpha=0.82)
         _set_ratio_axis(ax, means)
-        ax.set_ylabel("Mean OR-Tools attainment (%)")
+        ax.set_ylabel("Mean best-OR-Tools-reference attainment (%)")
         sample_sizes = sorted(stats["count"].astype(int).unique())
         sample_label = str(sample_sizes[0]) if len(sample_sizes) == 1 else "/".join(map(str, sample_sizes))
         ax.set_title(
