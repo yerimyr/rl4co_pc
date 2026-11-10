@@ -14,6 +14,10 @@ from rl4co.envs.common.utils import Generator
 class FPIGeneratorParams:
     num_parts: int = 4
     max_num_parts: int | None = None
+    # Optional curriculum mixture. Each entry is an inclusive [min, max]
+    # interval and size_weights gives the probability of selecting that band.
+    size_ranges: list[list[int]] | None = None
+    size_weights: list[float] | None = None
     material_types: int | None = None
     p_maint_H_low: float = 0.10
     p_maint_H_high: float = 0.50
@@ -48,6 +52,32 @@ class FPIGenerator(Generator):
         self.max_num_parts = int(self.p.max_num_parts or self.p.num_parts)
         if self.max_num_parts < self.min_num_parts:
             raise ValueError("max_num_parts must be >= num_parts")
+
+        self.size_ranges: list[tuple[int, int]] | None = None
+        self.size_weights: torch.Tensor | None = None
+        if self.p.size_ranges is not None:
+            ranges = [tuple(int(value) for value in interval) for interval in self.p.size_ranges]
+            if not ranges or any(len(interval) != 2 for interval in ranges):
+                raise ValueError("size_ranges must contain inclusive [min, max] pairs")
+            if any(low > high for low, high in ranges):
+                raise ValueError("Each curriculum size range must satisfy min <= max")
+            if any(
+                low < self.min_num_parts or high > self.max_num_parts
+                for low, high in ranges
+            ):
+                raise ValueError(
+                    "Curriculum size ranges must lie within num_parts and max_num_parts"
+                )
+            weights = self.p.size_weights
+            if weights is None or len(weights) != len(ranges):
+                raise ValueError("size_weights must have one value per size range")
+            weights_tensor = torch.as_tensor(weights, dtype=torch.float64)
+            if not torch.isfinite(weights_tensor).all() or (weights_tensor < 0).any():
+                raise ValueError("size_weights must be finite and non-negative")
+            if float(weights_tensor.sum()) <= 0:
+                raise ValueError("At least one curriculum size weight must be positive")
+            self.size_ranges = ranges
+            self.size_weights = weights_tensor / weights_tensor.sum()
 
         self.num_parts = self.max_num_parts
         self.num_nodes = self.max_num_parts + 1
@@ -238,8 +268,18 @@ class FPIGenerator(Generator):
         valid_part_mask = torch.zeros((B, N + 1), dtype=torch.bool, device=device)
         valid_part_mask[:, 0] = True
 
+        sampled_bands = None
+        if self.size_ranges is not None:
+            sampled_bands = torch.multinomial(
+                self.size_weights, num_samples=B, replacement=True
+            )
+
         for b in range(B):
-            n = int(torch.randint(self.min_num_parts, self.max_num_parts + 1, (1,)).item())
+            if sampled_bands is None:
+                low, high = self.min_num_parts, self.max_num_parts
+            else:
+                low, high = self.size_ranges[int(sampled_bands[b].item())]
+            n = int(torch.randint(low, high + 1, (1,)).item())
             num_parts[b] = n
             valid_part_mask[b, 1 : n + 1] = True
             eye = torch.eye(n, dtype=torch.bool, device=device)

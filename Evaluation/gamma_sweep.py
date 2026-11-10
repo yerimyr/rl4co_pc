@@ -32,7 +32,9 @@ DEFAULT_GAMMAS = (0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate OR-Tools, CPCCD, and gamma-specific nco-custom checkpoints."
+        description=(
+            "Evaluate OR-Tools, CPCCD, MCL, and gamma-specific nco-custom checkpoints."
+        )
     )
     parser.add_argument("--num-parts", type=int, default=30)
     parser.add_argument("--seed", type=int, default=1234)
@@ -53,14 +55,37 @@ def parse_args() -> argparse.Namespace:
         "--methods",
         type=str,
         default="ortools,cpccd,nco-custom",
-        help="Comma-separated methods from: ortools, cpccd, nco-custom.",
+        help="Comma-separated methods from: ortools, cpccd, mcl, nco-custom.",
     )
     parser.add_argument("--run-root", type=Path, default=ROOT / "logs" / "train" / "runs")
+    parser.add_argument(
+        "--nco-checkpoint",
+        type=Path,
+        default=None,
+        help=(
+            "Explicit NCO checkpoint. Intended for a single gamma evaluation and "
+            "takes precedence over automatic checkpoint discovery."
+        ),
+    )
     parser.add_argument("--device", choices=["cpu", "cuda", "auto"], default="cpu")
     parser.add_argument("--nco-batch-size", type=int, default=1)
-    parser.add_argument("--cpccd-alpha", type=float, default=0.5)
+    parser.add_argument(
+        "--cpccd-alpha",
+        type=float,
+        default=None,
+        help=(
+            "Enable the repository-specific strength-only fallback when detected "
+            "modularity is <= this value. Omit it to run the CPCCD community path "
+            "without a modularity threshold."
+        ),
+    )
     parser.add_argument("--ortools-time-limit", type=float, default=30.0)
     parser.add_argument("--ortools-workers", type=int, default=8)
+    parser.add_argument("--mcl-expansion", type=int, default=2)
+    parser.add_argument("--mcl-inflation", type=float, default=2.0)
+    parser.add_argument("--mcl-loop-value", type=float, default=1.0)
+    parser.add_argument("--mcl-iterations", type=int, default=100)
+    parser.add_argument("--mcl-pruning-threshold", type=float, default=0.001)
     parser.add_argument(
         "--ortools-result-name",
         type=str,
@@ -110,6 +135,8 @@ def parse_csv_methods(value: str) -> list[str]:
         "google": "ortools",
         "google-or-tools": "ortools",
         "or-tools": "ortools",
+        "markov": "mcl",
+        "markov-clustering": "mcl",
     }
     methods = []
     for item in value.split(","):
@@ -117,7 +144,7 @@ def parse_csv_methods(value: str) -> list[str]:
         if not key:
             continue
         methods.append(aliases.get(key, key))
-    allowed = {"ortools", "cpccd", "nco-custom"}
+    allowed = {"ortools", "cpccd", "mcl", "nco-custom"}
     unknown = sorted(set(methods) - allowed)
     if unknown:
         raise ValueError(f"Unknown methods: {unknown}. Allowed: {sorted(allowed)}")
@@ -182,11 +209,14 @@ def find_gamma_checkpoint(run_root: Path, num_parts: int, gamma: float) -> Path:
 
 def make_env_from_dataset(dataset: Any, device: torch.device, gamma: float) -> PartConsolidationEnv:
     sample = dataset[0]
+    # For variable-size curriculum datasets, num_parts stores the sampled size
+    # of one instance while tensors are padded to the range maximum. The
+    # environment must use the padded maximum so its action space matches.
+    padded_num_parts = int(sample["node_features"].shape[-2] - 1)
+    inferred_material_types = int(sample["node_features"].shape[-1] - 2)
     generator_params = {
-        "num_parts": int(scalar(sample["num_parts"])),
-        "material_types": int(scalar(sample["material_type_count"]))
-        if "material_type_count" in sample.keys()
-        else 3,
+        "num_parts": padded_num_parts,
+        "material_types": inferred_material_types,
     }
     return PartConsolidationEnv(
         generator_params=generator_params,
@@ -195,7 +225,7 @@ def make_env_from_dataset(dataset: Any, device: torch.device, gamma: float) -> P
     )
 
 
-def evaluate_cpccd(dataset, limit: int, gamma: float, seed: int, cpccd_alpha: float) -> list[dict[str, Any]]:
+def evaluate_cpccd(dataset, limit: int, gamma: float, seed: int, cpccd_alpha: float | None) -> list[dict[str, Any]]:
     from baseline.cpccd_solver import CPCCDSolver
 
     rows = []
@@ -220,6 +250,67 @@ def evaluate_cpccd(dataset, limit: int, gamma: float, seed: int, cpccd_alpha: fl
                 "wall_elapsed_sec": float(wall_elapsed),
                 "groups": json.dumps(groups),
                 "solver_status": "OK",
+                "cpccd_modularity": float(solver.last_modularity),
+                "cpccd_strategy": solver.last_strategy,
+                **{key: value for key, value in metrics.items()},
+            }
+        )
+    return rows
+
+
+def evaluate_mcl(
+    dataset,
+    limit: int,
+    gamma: float,
+    *,
+    expansion: int = 2,
+    inflation: float = 2.0,
+    loop_value: float = 1.0,
+    iterations: int = 100,
+    pruning_threshold: float = 0.001,
+) -> list[dict[str, Any]]:
+    """Evaluate the PC-adapted Markov Cluster Algorithm baseline."""
+    from baseline.mcl_solver import MCLSolver
+
+    rows = []
+    for idx in range(limit):
+        print(f"  Running mcl gamma={gamma:g}: instance {idx + 1}/{limit}", flush=True)
+        inst = strip_sep_instance(dataset[idx])
+        solver = MCLSolver(
+            expansion=expansion,
+            inflation=inflation,
+            loop_value=loop_value,
+            iterations=iterations,
+            pruning_threshold=pruning_threshold,
+        )
+        started = time.perf_counter()
+        groups, solver_elapsed = solver.solve(inst)
+        wall_elapsed = time.perf_counter() - started
+        metrics = score_metric_rows([evaluate_groups(groups, inst, gamma=gamma)])[0]
+        rows.append(
+            {
+                "gamma": gamma,
+                "method": "mcl",
+                "algorithm": "mcl",
+                "instance_idx": idx,
+                "score": float(metrics["score"]),
+                "solver_elapsed_sec": float(solver_elapsed),
+                "wall_elapsed_sec": float(wall_elapsed),
+                "groups": json.dumps(groups),
+                "solver_status": (
+                    "CONVERGED" if solver.last_diagnostics.converged else "MAX_ITERATIONS"
+                ),
+                "mcl_expansion": int(expansion),
+                "mcl_inflation": float(inflation),
+                "mcl_loop_value": float(loop_value),
+                "mcl_iterations_limit": int(iterations),
+                "mcl_iterations_used": solver.last_diagnostics.iterations,
+                "mcl_pruning_threshold": float(pruning_threshold),
+                "mcl_implementation": solver.implementation,
+                "mcl_raw_clusters": json.dumps(solver.last_raw_clusters),
+                "mcl_raw_num_clusters": int(len(solver.last_raw_clusters)),
+                "mcl_repair_splits": int(solver.last_repair_splits),
+                "mcl_weight_source": "W",
                 **{key: value for key, value in metrics.items()},
             }
         )
@@ -342,7 +433,11 @@ def summarize(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def save_gamma_boxplot(df: pd.DataFrame, output_dir: Path) -> None:
+def save_gamma_boxplot(
+    df: pd.DataFrame,
+    output_dir: Path,
+    y_limits: tuple[float, float] | None = None,
+) -> None:
     try:
         import matplotlib
 
@@ -352,13 +447,14 @@ def save_gamma_boxplot(df: pd.DataFrame, output_dir: Path) -> None:
         print(f"Skip gamma boxplot: {exc}")
         return
 
-    methods = ["ortools", "ortools-parallel", "cpccd", "nco-custom"]
+    methods = ["ortools", "ortools-parallel", "cpccd", "mcl", "nco-custom"]
     methods = [method for method in methods if method in set(df["method"])]
     gammas = sorted(float(gamma) for gamma in df["gamma"].dropna().unique())
     colors = {
         "ortools": "#9ecae1",
         "ortools-parallel": "#3182bd",
         "cpccd": "#fdae6b",
+        "mcl": "#bcbddc",
         "nco-custom": "#a1d99b",
     }
 
@@ -396,6 +492,8 @@ def save_gamma_boxplot(df: pd.DataFrame, output_dir: Path) -> None:
     ax.set_xlabel("gamma")
     ax.set_ylabel("score")
     ax.set_title("PC gamma sweep score distribution")
+    if y_limits is not None:
+        ax.set_ylim(*y_limits)
     ax.grid(True, axis="y", alpha=0.25)
     ax.legend(title="method")
     fig.tight_layout()
@@ -407,7 +505,11 @@ def save_gamma_boxplot(df: pd.DataFrame, output_dir: Path) -> None:
     print(f"Saved: {output_path}")
 
 
-def save_gamma_score_barplot(df: pd.DataFrame, output_dir: Path) -> None:
+def save_gamma_score_barplot(
+    df: pd.DataFrame,
+    output_dir: Path,
+    y_limits: tuple[float, float] | None = None,
+) -> None:
     """Save mean score bars with one-standard-deviation error bars."""
     try:
         import matplotlib
@@ -418,17 +520,19 @@ def save_gamma_score_barplot(df: pd.DataFrame, output_dir: Path) -> None:
         print(f"Skip gamma score bar plot: {exc}")
         return
 
-    method_order = ["ortools", "ortools-parallel", "cpccd", "nco-custom"]
+    method_order = ["ortools", "ortools-parallel", "cpccd", "mcl", "nco-custom"]
     display_names = {
         "ortools": "OR-Tools (serial)",
         "ortools-parallel": "OR-Tools (10 workers)",
         "cpccd": "CPCCD",
+        "mcl": "MCL",
         "nco-custom": "NCO",
     }
     colors = {
         "ortools": "#9ECAE1",
         "ortools-parallel": "#3182BD",
         "cpccd": "#F28E2B",
+        "mcl": "#9467BD",
         "nco-custom": "#59A14F",
     }
     methods = [method for method in method_order if method in set(df["method"])]
@@ -467,6 +571,8 @@ def save_gamma_score_barplot(df: pd.DataFrame, output_dir: Path) -> None:
     ax.set_xlabel("Gamma")
     ax.set_ylabel("Score")
     ax.set_title("Mean score over test instances (error bars: ±1 SD)")
+    if y_limits is not None:
+        ax.set_ylim(*y_limits)
     ax.grid(True, axis="y", alpha=0.25)
     ax.legend(title="Method")
     fig.tight_layout()
@@ -512,9 +618,29 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
             )
         if "cpccd" in methods:
             rows.extend(evaluate_cpccd(dataset, limit, gamma, args.seed, args.cpccd_alpha))
+        if "mcl" in methods:
+            rows.extend(
+                evaluate_mcl(
+                    dataset,
+                    limit,
+                    gamma,
+                    expansion=args.mcl_expansion,
+                    inflation=args.mcl_inflation,
+                    loop_value=args.mcl_loop_value,
+                    iterations=args.mcl_iterations,
+                    pruning_threshold=args.mcl_pruning_threshold,
+                )
+            )
         if "nco-custom" in methods:
             try:
-                ckpt = find_gamma_checkpoint(args.run_root, args.num_parts, gamma)
+                if args.nco_checkpoint is not None:
+                    if len(gammas) != 1:
+                        raise ValueError("--nco-checkpoint requires exactly one gamma")
+                    ckpt = args.nco_checkpoint.resolve()
+                    if not ckpt.exists():
+                        raise FileNotFoundError(f"Explicit checkpoint not found: {ckpt}")
+                else:
+                    ckpt = find_gamma_checkpoint(args.run_root, args.num_parts, gamma)
             except FileNotFoundError:
                 if args.allow_missing_nco:
                     print(f"  Skip nco-custom gamma={gamma:g}: checkpoint not found.")
@@ -570,12 +696,16 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
     save_dataframe(summarize(analysis_df), output_dir / "summary.csv")
     save_gamma_boxplot(analysis_df, output_dir / "plots")
     save_gamma_score_barplot(analysis_df, output_dir / "plots")
-    from Evaluation.plot_optimal_attainment import prepare_attainment, save_plots
+    has_ortools_reference = analysis_df["method"].astype(str).str.startswith("ortools").any()
+    if has_ortools_reference:
+        from Evaluation.plot_optimal_attainment import prepare_attainment, save_plots
 
-    save_plots(
-        prepare_attainment(analysis_df),
-        output_dir / "plots" / "optimal_attainment",
-    )
+        save_plots(
+            prepare_attainment(analysis_df),
+            output_dir / "plots" / "optimal_attainment",
+        )
+    else:
+        print("Skip optimal-attainment plots: no OR-Tools reference rows were evaluated.")
     save_json(
         output_dir / "config.json",
         {
@@ -589,9 +719,15 @@ def run(args: argparse.Namespace) -> pd.DataFrame:
             "last_invocation_gammas": gammas,
             "last_invocation_methods": methods,
             "run_root": str(args.run_root),
+            "nco_checkpoint": str(args.nco_checkpoint.resolve()) if args.nco_checkpoint else None,
             "device": args.device,
             "nco_batch_size": args.nco_batch_size,
             "cpccd_alpha": args.cpccd_alpha,
+            "mcl_expansion": args.mcl_expansion,
+            "mcl_inflation": args.mcl_inflation,
+            "mcl_loop_value": args.mcl_loop_value,
+            "mcl_iterations": args.mcl_iterations,
+            "mcl_pruning_threshold": args.mcl_pruning_threshold,
             "ortools_time_limit": args.ortools_time_limit,
             "ortools_workers": args.ortools_workers,
             "ortools_result_name": args.ortools_result_name,

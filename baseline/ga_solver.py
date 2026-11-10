@@ -10,7 +10,11 @@ from deap import base
 from deap import creator
 from deap import tools
 
-from rl4co.envs.pc.evaluator import evaluate_groups, relation_adjacency
+from rl4co.envs.pc.evaluator import (
+    DEFAULT_MODULARITY_GAMMA,
+    evaluate_groups,
+    relation_adjacency,
+)
 from rl4co.envs.pc.evaluator import score_metric_rows
 
 class GASolver:
@@ -30,6 +34,7 @@ class GASolver:
         generations: int = 300,  # 300
         elite_size: int = 0,
         tournament_size: int = 2,
+        crossover_rate: float = 0.90,
         mutation_rate: float = 0.30,
         strong_mutation_prob: float = 0.50,
         strong_mutation_steps: int = 5,
@@ -38,12 +43,14 @@ class GASolver:
         exploratory_crossover_prob: float = 0.25,
         exploratory_mutation_prob: float = 0.0,
         init_diverse_fraction: float = 0.70,
+        gamma: float = DEFAULT_MODULARITY_GAMMA,
         seed: int | None = None,
     ):
         self.pop_size = int(pop_size)
         self.generations = int(generations)
         self.elite_size = int(elite_size)
         self.tournament_size = int(tournament_size)
+        self.crossover_rate = float(crossover_rate)
         self.mutation_rate = float(mutation_rate)
         self.strong_mutation_prob = float(strong_mutation_prob)
         self.strong_mutation_steps = max(1, int(strong_mutation_steps))
@@ -52,6 +59,7 @@ class GASolver:
         self.exploratory_crossover_prob = float(exploratory_crossover_prob)
         self.exploratory_mutation_prob = float(exploratory_mutation_prob)
         self.init_diverse_fraction = float(init_diverse_fraction)
+        self.gamma = float(gamma)
         self.rng = random.Random(seed)
         self.last_best_score: float | None = None
         self.last_generation_best_scores: list[float] = []
@@ -124,7 +132,6 @@ class GASolver:
         self.last_generation_mutation_counts = [0]
         self.last_generation_strong_mutation_counts = [0]
 
-        cxpb = 0.9
         for generation in range(1, self.generations + 1):
             self._current_generation_mutation_count = 0
             self._current_generation_strong_mutation_count = 0
@@ -140,7 +147,7 @@ class GASolver:
             parent_child_examples: list[dict] = []
 
             for i in range(0, len(offspring) - 1, 2):
-                if self.rng.random() < cxpb:
+                if self.rng.random() < self.crossover_rate:
                     parent1 = self._as_array(offspring[i])
                     parent2 = self._as_array(offspring[i + 1])
                     toolbox.mate(offspring[i], offspring[i + 1])
@@ -450,14 +457,14 @@ class GASolver:
 
     def _fitness(self, sol, inst) -> float:
         groups = self._decode(sol)
-        metrics = evaluate_groups(groups, inst)
+        metrics = evaluate_groups(groups, inst, gamma=self.gamma)
         return float(score_metric_rows([metrics], weights=self.score_weights)[0]["score"])
 
     def _population_scores(self, pop, inst) -> list[float]:
         rows = []
         for idx, sol in enumerate(pop):
             groups = self._decode(sol)
-            metrics = evaluate_groups(groups, inst)
+            metrics = evaluate_groups(groups, inst, gamma=self.gamma)
             metrics["idx"] = idx
             rows.append(metrics)
 
@@ -577,6 +584,7 @@ class GASolver:
         fieldnames = [
             "generation",
             "best_raw_fitness",
+            "all_time_best_raw_fitness",
             "mean_raw_fitness",
             "unique_raw_score_count",
             "unique_grouping_count",
@@ -589,13 +597,16 @@ class GASolver:
             "strong_mutation_ratio",
         ]
         rows = []
+        all_time_best = float("-inf")
         for idx, generation in enumerate(generations):
             mutation_count = self.last_generation_mutation_counts[idx]
             strong_mutation_count = self.last_generation_strong_mutation_counts[idx]
+            all_time_best = max(all_time_best, self.last_generation_best_raw_scores[idx])
             rows.append(
                 {
                     "generation": generation,
                     "best_raw_fitness": self.last_generation_best_raw_scores[idx],
+                    "all_time_best_raw_fitness": all_time_best,
                     "mean_raw_fitness": self.last_generation_mean_raw_scores[idx],
                     "unique_raw_score_count": self.last_generation_unique_raw_score_counts[idx],
                     "unique_grouping_count": self.last_generation_unique_grouping_counts[idx],

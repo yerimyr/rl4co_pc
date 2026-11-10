@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 
 
-METHODS = ("cpccd", "nco-custom")
-LABELS = {"cpccd": "CPCCD", "nco-custom": "NCO"}
-COLORS = {"cpccd": "#F28E2B", "nco-custom": "#59A14F"}
+METHODS = ("cpccd", "mcl", "nco-custom")
+LABELS = {"cpccd": "CPCCD", "mcl": "MCL", "nco-custom": "NCO"}
+COLORS = {"cpccd": "#F28E2B", "mcl": "#9467BD", "nco-custom": "#59A14F"}
 
 
 def summarize_gaps(df: pd.DataFrame) -> pd.DataFrame:
@@ -42,13 +42,14 @@ def save_mean_gap_plot(summary: pd.DataFrame, output_dir: Path, dataset_name: st
 
     gammas = sorted(summary["gamma"].astype(float).unique())
     x = np.arange(len(gammas), dtype=float)
-    width = 0.36
+    active_methods = [method for method in METHODS if method in set(summary["method"])]
+    width = 0.72 / max(len(active_methods), 1)
 
     fig, ax = plt.subplots(figsize=(11.0, 6.2))
-    for index, method in enumerate(METHODS):
+    for index, method in enumerate(active_methods):
         method_rows = summary.loc[summary["method"].eq(method)].set_index("gamma")
         means = np.array([method_rows.loc[gamma, "gap_mean"] for gamma in gammas])
-        positions = x + (index - 0.5) * width
+        positions = x + (index - (len(active_methods) - 1) / 2.0) * width
         bars = ax.bar(
             positions,
             means,

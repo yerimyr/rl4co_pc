@@ -1,4 +1,4 @@
-"""Plot CPCCD/NCO performance relative to the best available OR-Tools score.
+"""Plot baseline/NCO performance relative to the best available OR-Tools score.
 
 Attainment uses the original OR-Tools-relative formula::
 
@@ -18,9 +18,9 @@ import numpy as np
 import pandas as pd
 
 
-METHODS = ("cpccd", "nco-custom")
-DISPLAY_NAMES = {"cpccd": "CPCCD", "nco-custom": "NCO"}
-COLORS = {"cpccd": "#F28E2B", "nco-custom": "#59A14F"}
+METHODS = ("cpccd", "mcl", "nco-custom")
+DISPLAY_NAMES = {"cpccd": "CPCCD", "mcl": "MCL", "nco-custom": "NCO"}
+COLORS = {"cpccd": "#F28E2B", "mcl": "#9467BD", "nco-custom": "#59A14F"}
 
 
 def parse_args() -> argparse.Namespace:

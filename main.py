@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
         "--algorithms",
         type=str,
         default="cpccd,sa,ga",
-        help="Comma-separated list from: cpccd, sa, ga, nco.",
+        help="Comma-separated list from: cpccd, mcl, sa, ga, nco.",
     )
     parser.add_argument(
         "--limit",
@@ -68,7 +68,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ga-pop-size", type=int, default=120)
     parser.add_argument("--ga-generations", type=int, default=300)  # 300
     parser.add_argument("--sa-iterations", type=int, default=10_000)
-    parser.add_argument("--cpccd-alpha", type=float, default=0.3)
+    parser.add_argument("--mcl-expansion", type=int, default=2)
+    parser.add_argument("--mcl-inflation", type=float, default=2.0)
+    parser.add_argument("--mcl-loop-value", type=float, default=1.0)
+    parser.add_argument("--mcl-iterations", type=int, default=100)
+    parser.add_argument("--mcl-pruning-threshold", type=float, default=0.001)
+    parser.add_argument(
+        "--cpccd-alpha",
+        type=float,
+        default=None,
+        help=(
+            "Enable the repository-specific strength-only fallback at this "
+            "modularity threshold. Omit it for threshold-free CPCCD."
+        ),
+    )
     parser.add_argument(
         "--plot-history",
         action="store_true",
@@ -169,6 +182,16 @@ def make_solver(name: str, args: argparse.Namespace, seed: int) -> Any:
         from baseline.cpccd_solver import CPCCDSolver
 
         return CPCCDSolver(alpha=args.cpccd_alpha)
+    if name == "mcl":
+        from baseline.mcl_solver import MCLSolver
+
+        return MCLSolver(
+            expansion=getattr(args, "mcl_expansion", 2),
+            inflation=getattr(args, "mcl_inflation", 2.0),
+            loop_value=getattr(args, "mcl_loop_value", 1.0),
+            iterations=getattr(args, "mcl_iterations", 100),
+            pruning_threshold=getattr(args, "mcl_pruning_threshold", 0.001),
+        )
     if name == "sa":
         from baseline.sa_solver import SASolver
 
@@ -320,6 +343,27 @@ def evaluate_algorithm(
             "wall_elapsed_sec": float(wall_elapsed),
             "groups": json.dumps(groups),
         }
+        if name.lower() == "mcl":
+            row.update(
+                {
+                    "solver_status": (
+                        "CONVERGED"
+                        if solver.last_diagnostics.converged
+                        else "MAX_ITERATIONS"
+                    ),
+                    "mcl_expansion": solver.expansion,
+                    "mcl_inflation": solver.inflation,
+                    "mcl_loop_value": solver.loop_value,
+                    "mcl_iterations_limit": solver.iterations,
+                    "mcl_iterations_used": solver.last_diagnostics.iterations,
+                    "mcl_pruning_threshold": solver.pruning_threshold,
+                    "mcl_implementation": solver.implementation,
+                    "mcl_raw_clusters": json.dumps(solver.last_raw_clusters),
+                    "mcl_raw_num_clusters": len(solver.last_raw_clusters),
+                    "mcl_repair_splits": solver.last_repair_splits,
+                    "mcl_weight_source": "W",
+                }
+            )
         if plot_path is not None:
             row["plot_path"] = plot_path
         row.update({key: clean_value(value) for key, value in metrics.items()})

@@ -41,6 +41,28 @@ def run(cfg: DictConfig) -> tuple[dict, dict]:
     log.info(f"Instantiating model <{cfg.model._target_}>")
     model: LightningModule = hydra.utils.instantiate(cfg.model, env)
 
+    init_checkpoint = cfg.get("init_from_checkpoint")
+    if init_checkpoint:
+        log.info(f"Initializing model weights from <{init_checkpoint}>")
+        checkpoint = torch.load(init_checkpoint, map_location="cpu", weights_only=False)
+        state_dict = checkpoint.get("state_dict", checkpoint)
+        incompatible = model.load_state_dict(state_dict, strict=False)
+        missing_policy = [key for key in incompatible.missing_keys if key.startswith("policy.")]
+        unexpected_policy = [
+            key for key in incompatible.unexpected_keys if key.startswith("policy.")
+        ]
+        if missing_policy or unexpected_policy:
+            raise RuntimeError(
+                "Policy checkpoint is incompatible with the curriculum stage. "
+                f"Missing policy keys: {missing_policy}; "
+                f"unexpected policy keys: {unexpected_policy}"
+            )
+        log.info(
+            "Loaded weights only; optimizer state and epoch counter will start fresh. "
+            f"Non-policy missing={len(incompatible.missing_keys)}, "
+            f"unexpected={len(incompatible.unexpected_keys)}"
+        )
+
     log.info("Instantiating callbacks...")
     callbacks: list[Callback] = utils.instantiate_callbacks(cfg.get("callbacks"))
 

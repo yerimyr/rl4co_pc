@@ -10,6 +10,9 @@ import pandas as pd
 from scipy import stats
 
 
+TIE_ATOL = 1e-9
+
+
 def holm_adjust(pvalues: pd.Series) -> pd.Series:
     """Holm family-wise error correction without an extra dependency."""
     values = pvalues.to_numpy(dtype=float)
@@ -25,7 +28,9 @@ def holm_adjust(pvalues: pd.Series) -> pd.Series:
 
 
 def rank_biserial(differences: np.ndarray) -> float:
-    nonzero = differences[~np.isclose(differences, 0.0)]
+    nonzero = differences[
+        ~np.isclose(differences, 0.0, rtol=0.0, atol=TIE_ATOL)
+    ]
     if nonzero.size == 0:
         return 0.0
     ranks = stats.rankdata(np.abs(nonzero))
@@ -46,6 +51,9 @@ def compare_file(raw_results: Path, num_parts: int) -> list[dict[str, float | in
         cpccd = paired["cpccd"].to_numpy(dtype=float)
         nco = paired["nco-custom"].to_numpy(dtype=float)
         diff = nco - cpccd
+        tied = np.isclose(diff, 0.0, rtol=0.0, atol=TIE_ATOL)
+        test_diff = diff.copy()
+        test_diff[tied] = 0.0
         count = len(diff)
         mean_diff = float(diff.mean())
         std_diff = float(diff.std(ddof=1)) if count > 1 else np.nan
@@ -54,7 +62,9 @@ def compare_file(raw_results: Path, num_parts: int) -> list[dict[str, float | in
 
         t_result = stats.ttest_rel(nco, cpccd)
         try:
-            w_result = stats.wilcoxon(diff, alternative="two-sided", zero_method="wilcox")
+            w_result = stats.wilcoxon(
+                test_diff, alternative="two-sided", zero_method="wilcox"
+            )
             wilcoxon_stat = float(w_result.statistic)
             wilcoxon_p = float(w_result.pvalue)
         except ValueError:
@@ -75,16 +85,16 @@ def compare_file(raw_results: Path, num_parts: int) -> list[dict[str, float | in
                 "median_diff_nco_minus_cpccd": float(np.median(diff)),
                 "mean_diff_ci95_low": mean_diff - critical * sem,
                 "mean_diff_ci95_high": mean_diff + critical * sem,
-                "nco_wins": int((diff > 0).sum()),
-                "ties": int(np.isclose(diff, 0.0).sum()),
-                "cpccd_wins": int((diff < 0).sum()),
+                "nco_wins": int(((diff > 0) & ~tied).sum()),
+                "ties": int(tied.sum()),
+                "cpccd_wins": int(((diff < 0) & ~tied).sum()),
                 "shapiro_diff_p": shapiro_p,
                 "paired_t_stat": float(t_result.statistic),
                 "paired_t_p": float(t_result.pvalue),
                 "cohen_dz": mean_diff / std_diff if std_diff > 0 else np.nan,
                 "wilcoxon_stat": wilcoxon_stat,
                 "wilcoxon_p": wilcoxon_p,
-                "rank_biserial": rank_biserial(diff),
+                "rank_biserial": rank_biserial(test_diff),
                 "raw_results": str(raw_results.resolve()),
             }
         )
@@ -134,10 +144,38 @@ def main() -> None:
         ["NCO", "CPCCD"],
         default="Tie",
     )
+    result["conclusion_holm_0p05"] = np.select(
+        [
+            result["wilcoxon_significant_holm_0p05"]
+            & (result["mean_diff_nco_minus_cpccd"] > 0),
+            result["wilcoxon_significant_holm_0p05"]
+            & (result["mean_diff_nco_minus_cpccd"] < 0),
+        ],
+        ["NCO significantly better", "CPCCD significantly better"],
+        default="No significant difference",
+    )
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     output = args.output_dir / "cpccd_vs_nco_paired_tests.csv"
     result.to_csv(output, index=False)
+    for num_parts, per_size in result.groupby("num_parts", sort=True):
+        per_size.to_csv(
+            args.output_dir / f"n{int(num_parts)}_cpccd_vs_nco_paired_tests.csv",
+            index=False,
+        )
+    result[
+        [
+            "num_parts",
+            "gamma",
+            "n_pairs",
+            "cpccd_mean",
+            "nco_mean",
+            "mean_diff_nco_minus_cpccd",
+            "wilcoxon_p_holm",
+            "rank_biserial",
+            "conclusion_holm_0p05",
+        ]
+    ].to_csv(args.output_dir / "conclusion_summary.csv", index=False)
     columns = [
         "num_parts", "gamma", "n_pairs", "cpccd_mean", "nco_mean",
         "mean_diff_nco_minus_cpccd", "mean_diff_ci95_low", "mean_diff_ci95_high",

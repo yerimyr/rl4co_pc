@@ -48,6 +48,9 @@ compile: False
 # simply provide checkpoint path to resume training
 ckpt_path: null
 
+# Load model weights only and start a fresh training stage (new optimizer/epoch count).
+init_from_checkpoint: null
+
 # seed for random number generators in pytorch, numpy and python.random
 seed: null
 

@@ -65,14 +65,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ga-pop-size", type=int, default=100)
     parser.add_argument("--ga-generations", type=int, default=3000)
     parser.add_argument("--sa-iterations", type=int, default=4000)
-    parser.add_argument("--cpccd-alpha", type=float, default=0.5)
+    parser.add_argument(
+        "--cpccd-alpha",
+        type=float,
+        default=None,
+        help=(
+            "Enable the repository-specific strength-only fallback at this "
+            "modularity threshold. Omit it for threshold-free CPCCD."
+        ),
+    )
+    parser.add_argument("--mcl-expansion", type=int, default=2)
+    parser.add_argument("--mcl-inflation", type=float, default=2.0)
+    parser.add_argument("--mcl-loop-value", type=float, default=1.0)
+    parser.add_argument("--mcl-iterations", type=int, default=100)
+    parser.add_argument("--mcl-pruning-threshold", type=float, default=0.001)
     parser.add_argument(
         "--algorithms",
         type=str,
         default=None,
         help=(
             "Comma-separated algorithms to run. Examples: "
-            "cpccd,sa,ga,nco-custom,nco-matnet,nco-new. "
+            "cpccd,mcl,sa,ga,nco-custom,nco-matnet,nco-new. "
             "NCO aliases are resolved using --checkpoint-num-parts."
         ),
     )
@@ -201,6 +214,11 @@ def make_config(args: argparse.Namespace) -> dict[str, Any]:
         "ga_generations": args.ga_generations,
         "sa_iterations": args.sa_iterations,
         "cpccd_alpha": args.cpccd_alpha,
+        "mcl_expansion": args.mcl_expansion,
+        "mcl_inflation": args.mcl_inflation,
+        "mcl_loop_value": args.mcl_loop_value,
+        "mcl_iterations": args.mcl_iterations,
+        "mcl_pruning_threshold": args.mcl_pruning_threshold,
         "plot_history": args.plot_history,
         "generator_params": generator_params,
         "algorithms": algorithms,
@@ -303,6 +321,11 @@ def run(config: dict[str, Any]) -> pd.DataFrame:
         ga_generations=config["ga_generations"],
         sa_iterations=config["sa_iterations"],
         cpccd_alpha=config["cpccd_alpha"],
+        mcl_expansion=config["mcl_expansion"],
+        mcl_inflation=config["mcl_inflation"],
+        mcl_loop_value=config["mcl_loop_value"],
+        mcl_iterations=config["mcl_iterations"],
+        mcl_pruning_threshold=config["mcl_pruning_threshold"],
         plot_history=config["plot_history"],
         plot_dir=output_dir / "plots" / "history",
         extra_columns={

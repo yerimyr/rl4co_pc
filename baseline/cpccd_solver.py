@@ -33,12 +33,20 @@ class CPCCDSolver:
     - The public API remains compatible: solve(inst) -> (groups, elapsed_sec)
     """
 
-    def __init__(self, alpha: float = 0.3, max_r3_retries: int = 10):
-        self.alpha = float(alpha)
+    def __init__(self, alpha: float | None = None, max_r3_retries: int = 10):
+        """Create a CPCCD solver.
+
+        ``alpha=None`` runs the community-based CPCCD path unconditionally.  A
+        numeric alpha enables the repository-specific hybrid fallback to the
+        strength-only solver when the detected modularity is at or below that
+        threshold.
+        """
+        self.alpha = None if alpha is None else float(alpha)
         self.max_r3_retries = int(max_r3_retries)
         self.last_conflicts: list[ConflictRecord] = []
         self.last_communities: list[list[int]] = []
         self.last_modularity: float = 0.0
+        self.last_strategy: str = "cpccd"
 
     def solve(self, inst):
         start = time.perf_counter()
@@ -48,9 +56,12 @@ class CPCCDSolver:
         self.last_communities = [sorted(c) for c in communities]
         self.last_modularity = modularity
 
-        if modularity <= self.alpha or len(communities) <= 1:
+        if self.alpha is not None and (modularity <= self.alpha or len(communities) <= 1):
+            self.last_strategy = "strength-only"
             groups = self._solve_strength_only(inst)
             return groups, time.perf_counter() - start
+
+        self.last_strategy = "cpccd"
 
         blocked_pairs: set[tuple[int, int]] = set()
         groups = [[i] for i in range(inst["num_parts"])]

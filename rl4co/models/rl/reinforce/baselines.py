@@ -211,7 +211,17 @@ class RolloutBaseline(REINFORCEBaseline):
             t, p = ttest_rel(-candidate_vals, -self.bl_vals)
 
             p_val = p / 2  # one-sided
-            assert t < 0, "T-statistic should be negative"
+            # Numerically identical (or almost identical) greedy rollouts can
+            # produce t=nan or a non-negative statistic even when the float32
+            # means differ by a tiny amount. In that case there is no valid
+            # statistical evidence to replace the rollout baseline, so keep
+            # the current baseline instead of aborting the whole training run.
+            if not t < 0:
+                log.info(
+                    "Keeping baseline: paired t-test did not show a valid "
+                    f"improvement (t={t}, p={p})"
+                )
+                return
             log.info(f"p-value: {p_val:.3f}")
             if p_val < self.bl_alpha:
                 log.info("Updating baseline")
